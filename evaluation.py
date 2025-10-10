@@ -15,8 +15,8 @@ def precision_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[flo
     """Computes precision at K with challenge formula
 
     Args:
-        submission (dict[list]): Submission JSON, pid -> Tracks
-        qrel (dict[list]): Qrels JSON, pid -> Tracks
+        submission (dict[list]): Submission JSON, pid -> ids
+        qrel (dict[list]): Qrels JSON, pid -> tracks
         k (int): K
 
     Returns:
@@ -83,8 +83,8 @@ def reciprocal_rank(submission: dict[list], qrel: dict[list]) -> dict[float]:
     """Computes reciprocal rank with challenge formula
 
     Args:
-        submission (dict[list]): Submission JSON, pid -> Tracks
-        qrel (dict[list]): Qrels JSON, pid -> Tracks
+        submission (dict[list]): Submission JSON, pid -> ids
+        qrel (dict[list]): Qrels JSON, pid -> tracks
 
     Returns:
         dict[float]: pid -> reciprocal rank
@@ -108,16 +108,21 @@ def reciprocal_rank(submission: dict[list], qrel: dict[list]) -> dict[float]:
     return rranks
 
 
-def evaluation_report(submission: dict[list], qrel: dict[list]) -> dict[float]:
+def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
     """Generate P@3, P@5, P@10, P@R, RR report
 
     Args:
         submission (dict[list]): submission JSON, pid -> Tracks
-        qrel (dict[list]): qrels JSON, pid -> Tracks
+        qrel (dict[list]): qrels JSON
 
     Returns:
         dict[float]: evaluation report
     """
+
+    qrel = {}
+    for playlist in qrel_obj["playlists"]:
+        qrel[str(playlist["pid"])] = playlist["tracks"]
+
 
     p3 = precision_at_k(submission, qrel, 3)
     p5 = precision_at_k(submission, qrel, 5)
