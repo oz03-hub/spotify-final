@@ -1,12 +1,12 @@
-import util
+from util import extract_id
 
 def _parse_qrel(qrel):
     qrel_tracks = set()
     qrel_artists = set()
 
     for track in qrel:
-        qrel_tracks.add(util._extract_id(track["track_uri"]))
-        qrel_artists.add(util._extract_id(track["artist_uri"]))
+        qrel_tracks.add(extract_id(track["track_uri"]))
+        qrel_artists.add(extract_id(track["artist_uri"]))
 
     return qrel_tracks, qrel_artists
 
@@ -28,8 +28,8 @@ def precision_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[flo
 
         correct = 0
         for track in sub[:k]:
-            track_id = util._extract_id(track["track_uri"])
-            artist_uri = util._extract_id(track["artist_uri"])
+            track_id = extract_id(track["track_uri"])
+            artist_uri = extract_id(track["artist_uri"])
 
             if track_id in qrel_tracks:
                 correct += 1
@@ -62,8 +62,8 @@ def r_precision(submission: dict[list], qrel: dict[list]) -> dict[float]:
 
         correct = 0
         for track in sub[:R]:
-            track_id = util._extract_id(track["track_uri"])
-            artist_uri = util._extract_id(track["artist_uri"])
+            track_id = extract_id(track["track_uri"])
+            artist_uri = extract_id(track["artist_uri"])
 
             if track_id in qrel_tracks:
                 correct += 1
@@ -94,7 +94,7 @@ def reciprocal_rank(submission: dict[list], qrel: dict[list]) -> dict[float]:
         qrel_tracks, _ = _parse_qrel(qrel)
 
         for i, track in enumerate(sub):
-            track_id = util._extract_id(track["track_uri"])
+            track_id = extract_id(track["track_uri"])
 
             if track_id in qrel_tracks:
                 return 1 / (i + 1)
