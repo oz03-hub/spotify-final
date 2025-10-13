@@ -1,4 +1,5 @@
 import orjson
+import json
 from pathlib import Path
 import os
 
@@ -27,3 +28,13 @@ def get_query_files(queries_dir):
     """Get all query files from directory."""
     queries_path = Path(queries_dir)
     return [queries_path / f for f in os.listdir(queries_path) if f.endswith(".json")]
+
+def save_results(results, query_file, results_dir):
+    """Save results to JSON file."""
+    # Create output filename preserving original query filename
+    output_file = results_dir / query_file
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"Results written to: {output_file}")
