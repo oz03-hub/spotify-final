@@ -32,6 +32,12 @@ All configurations for smoothing and datapath etc, are made in the python file i
 
 This will also save generated paylists under `dataset/results/lmir_baseline/`.
 
+### Matrix Factorization on Song-Playlist Entities
+This approach follows the cold-start example used in vl6 method in the survey paper.
+```
+python mf_baseline.py
+```
+
 ## Viewing Evaluation Measures
 
 ```
@@ -39,3 +45,7 @@ python view_measures.py
 ```
 
 This will display the mean performance of the baseline. To change the baseline being evaluated, you need to change `baseline_name` variable in the code.
+
+# ToDo
+[] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
+[] Add closest playlist name retriever, probably add to `mf_baseline.py`
