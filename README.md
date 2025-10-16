@@ -54,3 +54,4 @@ This will display the mean performance of the baseline. To change the baseline b
 # ToDo
 [] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
 [] Add closest playlist name retriever, probably add to `mf_baseline.py`
+[] Switch LMIR to inverted index implementation.
