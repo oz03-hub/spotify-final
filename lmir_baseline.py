@@ -1,13 +1,13 @@
 import json
 import math
-import os
 from collections import Counter
 from pathlib import Path
 from tqdm import tqdm
 import nltk
+from util import tokenize, load_corpus, load_queries, get_query_files, save_results
 
 # Ensure necessary tokenizer resources
-nltk.download('punkt', quiet=True)
+nltk.download("punkt", quiet=True)
 
 
 # ============================================================================
@@ -15,17 +15,22 @@ nltk.download('punkt', quiet=True)
 # ============================================================================
 class Config:
     """Centralized configuration for paths and parameters."""
-    
+
     # Default paths
     WORKSPACE_DIR = Path("dataset")
-    CORPUS_FILE = WORKSPACE_DIR / "tracks_index.json"
-    QUERIES_DIR = WORKSPACE_DIR / "test"
+    INVERTED_INDEX = WORKSPACE_DIR / "inverted_index.json"
+    CORPUS_FILE = WORKSPACE_DIR / "track_corpus.json"
+    TEST_QUERIES_DIR = WORKSPACE_DIR / "test"
+    VAL_QUERIES_DIR = WORKSPACE_DIR / "val"
+
     RESULTS_DIR = WORKSPACE_DIR / "results" / "lmir_baseline"
-    
+    TEST_RESULTS_DIR = RESULTS_DIR / "test"
+    VAL_RESULTS_DIR = RESULTS_DIR / "val"
+
     # Model parameters
     MU = 2000  # Dirichlet smoothing parameter
-    TOP_K = 100  # Number of top results to return
-    
+    TOP_K = 200  # Number of top results to return
+
     @classmethod
     def update_from_args(cls, args):
         """Update configuration from command line arguments."""
@@ -35,122 +40,149 @@ class Config:
             cls.QUERIES_DIR = Path(args.queries)
         if args.results:
             cls.RESULTS_DIR = Path(args.results)
+        if args.inverted_index:
+            cls.INVERTED_INDEX = Path(args.inverted_index)
         if args.mu:
             cls.MU = args.mu
         if args.top_k:
             cls.TOP_K = args.top_k
-        
+
         # Ensure results directory exists
         cls.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-# ============================================================================
-# TEXT PROCESSING
-# ============================================================================
-def tokenize(text):
-    """Simple word tokenizer and normalizer."""
-    return [w.lower() for w in nltk.word_tokenize(text) if w.isalnum()]
+        cls.TEST_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        cls.VAL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
 # RETRIEVAL MODEL
 # ============================================================================
 class DirichletLMRetriever:
-    """Dirichlet Language Model retriever for document ranking."""
-    
+    """Dirichlet Language Model retriever using inverted index."""
+
     def __init__(self, mu=2000):
         """
         Args:
             mu: Dirichlet smoothing parameter. Larger values = more smoothing.
         """
         self.mu = mu
+        self.inverted_index = {}
+        self.docid_map = {}
+        self.doc_lens = {}
         self.collection_freq = Counter()
         self.collection_len = 0
-        self.doc_lens = {}
-        self.doc_freqs = {}
+        self.total_docs = 0
 
-    def build_index(self, corpus):
+    def load_inverted_index(self, index_path):
         """
-        Build term statistics for all documents.
-        
+        Load inverted index from JSON file.
+
         Args:
-            corpus: dict {docid: {"artist": str, "track": str, "album": str}}
+            index_path: Path to inverted index JSON file
         """
-        for docid, data in tqdm(corpus.items(), desc="Indexing corpus"):
-            text = f"{data.get('artist', '')} {data.get('track', '')} {data.get('album', '')}"
-            tokens = tokenize(text)
-            term_freqs = Counter(tokens)
-            
-            self.doc_freqs[docid] = term_freqs
-            self.doc_lens[docid] = sum(term_freqs.values())
-            self.collection_freq.update(term_freqs)
-            self.collection_len += sum(term_freqs.values())
+        print(f"Loading inverted index from {index_path}")
+        with open(index_path, "r") as f:
+            data = json.load(f)
 
-    def score(self, query_tokens, docid):
+        # Extract metadata
+        self.docid_map = data.get("DOCID_MAP", [])
+        self.total_docs = data.get("TOTAL_DOCS", 0)
+
+        print("Building collection statistics...")
+        for term, postings in tqdm(data.items()):
+            if term in ["DOCID_MAP", "TOTAL_DOCS"]:
+                continue
+
+            # Convert postings to dict for faster lookup
+            postings_dict = {}
+            term_collection_freq = 0
+
+            for docid, tf in postings:
+                postings_dict[docid] = tf
+                term_collection_freq += tf
+
+                # Update document length
+                if docid not in self.doc_lens:
+                    self.doc_lens[docid] = 0
+                self.doc_lens[docid] += tf
+
+            self.inverted_index[term] = postings_dict
+            self.collection_freq[term] = term_collection_freq
+            self.collection_len += term_collection_freq
+
+        print(
+            f"Loaded index with {len(self.inverted_index)} terms, "
+            f"{self.total_docs} documents, "
+            f"{self.collection_len} total tokens"
+        )
+
+    def score_document(self, query_tokens, docid):
         """
-        Compute Dirichlet-smoothed log-likelihood score.
-        
+        Compute Dirichlet-smoothed log-likelihood score for a document.
+
         Args:
             query_tokens: List of tokenized query terms
-            docid: Document identifier
-            
+            docid: Document identifier (integer)
+
         Returns:
             float: Log-likelihood score
         """
         score = 0.0
-        doc_freqs = self.doc_freqs[docid]
-        doc_len = self.doc_lens[docid]
+        doc_len = self.doc_lens.get(docid, 0)
+
+        if doc_len == 0:
+            return float("-inf")
 
         for term in query_tokens:
-            f_qi_D = doc_freqs.get(term, 0)
-            p_qi_C = (self.collection_freq.get(term, 0) / self.collection_len 
-                     if self.collection_len > 0 else 0)
+            # Get term frequency in document
+            f_qi_D = 0
+            if term in self.inverted_index:
+                f_qi_D = self.inverted_index[term].get(docid, 0)
+
+            # Get collection probability
+            p_qi_C = (
+                self.collection_freq.get(term, 0) / self.collection_len
+                if self.collection_len > 0
+                else 0
+            )
+
+            # Dirichlet smoothing
             term_prob = (f_qi_D + self.mu * p_qi_C) / (doc_len + self.mu)
-            
+
             if term_prob > 0:
                 score += math.log(term_prob)
-                
+
         return score
 
     def retrieve(self, query_text, top_k=10):
         """
-        Retrieve and rank documents for a query.
-        
+        Retrieve and rank documents for a query using inverted index.
+
         Args:
             query_text: Query string
             top_k: Number of top results to return
-            
+
         Returns:
-            List of (docid, score) tuples, sorted by score descending
+            List of (track_id, score) tuples, sorted by score descending
         """
         query_tokens = tokenize(query_text)
-        scores = [(docid, self.score(query_tokens, docid)) 
-                 for docid in self.doc_freqs]
+
+        # Get candidate documents (documents containing at least one query term)
+        candidate_docs = set()
+        for term in query_tokens:
+            if term in self.inverted_index:
+                candidate_docs.update(self.inverted_index[term].keys())
+
+        # Score candidate documents
+        scores = []
+        for docid in candidate_docs:
+            score = self.score_document(query_tokens, docid)
+            track_id = self.docid_map[docid]
+            if track_id:
+                scores.append((track_id, score))
+
+        # Sort by score descending and return top-k
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
-
-
-# ============================================================================
-# DATA LOADING
-# ============================================================================
-def load_corpus(corpus_file):
-    """Load corpus from JSON file."""
-    print(f"Loading corpus from: {corpus_file}")
-    with open(corpus_file, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_queries(query_file):
-    """Load queries from JSON file."""
-    with open(query_file, "r", encoding="utf-8") as f:
-        return json.load(f)["playlists"]
-
-
-def get_query_files(queries_dir):
-    """Get all query files from directory."""
-    queries_path = Path(queries_dir)
-    return [queries_path / f for f in os.listdir(queries_path) 
-            if f.endswith('.json')]
 
 
 # ============================================================================
@@ -161,19 +193,9 @@ def process_queries(retriever, queries, top_k):
     results = {}
     for playlist in tqdm(queries, desc="Retrieving"):
         query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}"
-        results[playlist.get("pid")] = retriever.retrieve(query_text, top_k=top_k)
+        pid = playlist.get("pid")
+        results[pid] = retriever.retrieve(query_text, top_k=top_k)
     return results
-
-
-def save_results(results, query_file, results_dir):
-    """Save results to JSON file."""
-    # Create output filename preserving original query filename
-    output_file = results_dir / query_file
-    
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    
-    print(f"Results written to: {output_file}")
 
 
 # ============================================================================
@@ -181,57 +203,64 @@ def save_results(results, query_file, results_dir):
 # ============================================================================
 def main():
     """Main execution function."""
-    # Load corpus and build index
-    corpus = load_corpus(Config.CORPUS_FILE)
+    # Load inverted index
     retriever = DirichletLMRetriever(mu=Config.MU)
-    retriever.build_index(corpus)
+    retriever.load_inverted_index(Config.INVERTED_INDEX)
 
-    # Process all query files
-    query_files = get_query_files(Config.QUERIES_DIR)
-    print(f"Found {len(query_files)} query files")
-    
-    for query_file in query_files:
-        print(f"\nProcessing: {query_file.name}")
-        queries = load_queries(query_file)
-        results = process_queries(retriever, queries, Config.TOP_K)
-        for pid in results:
-            results[pid] = [corpus[docid] for docid, _ in results[pid]]
-        save_results(results, query_file.name, Config.RESULTS_DIR)
+    corpus = load_corpus(Config.CORPUS_FILE)
 
+    for query_dir, result_dir in [
+        (Config.TEST_QUERIES_DIR, Config.TEST_RESULTS_DIR),
+        (Config.VAL_QUERIES_DIR, Config.VAL_RESULTS_DIR),
+    ]:
+        print(f"\nProcessing queries in directory: {query_dir}")
+        query_files = get_query_files(query_dir)
+        print(f"\nFound {len(query_files)} query files")
+
+        for query_file in query_files:
+            print(f"\nProcessing: {query_file.name}")
+            queries = load_queries(query_file)
+            results = process_queries(retriever, queries, Config.TOP_K)
+
+            # Map track_ids to track objects
+            for pid in results:
+                replacement_tracks = []
+                for track_id, _ in results[pid]:
+                    track = corpus[track_id]
+                    eval_track = {
+                        "track_uri": track["track_uri"],
+                        "artist_uri": track["artist_uri"],
+                    }
+                    replacement_tracks.append(eval_track)
+                results[pid] = replacement_tracks
+
+            save_results(results, query_file.name, result_dir)
     print("\n✓ All queries processed successfully")
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(
-        description="Dirichlet Language Model Retriever for Music Track Corpus",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Dirichlet Language Model Retriever for Music Track Corpus (with Inverted Index)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument("--corpus", help="Path to corpus JSON file")
     parser.add_argument(
-        "--corpus", 
-        help="Path to corpus JSON file",
+        "--queries", help="Path to directory containing query JSON files"
     )
+    parser.add_argument("--results", help="Path to output directory for results")
+    parser.add_argument("--inverted_index", help="Path to inverted index JSON file")
     parser.add_argument(
-        "--queries", 
-        help="Path to directory containing query JSON files"
-    )
-    parser.add_argument(
-        "--results",
-        help="Path to output directory for results"
-    )
-    parser.add_argument(
-        "--mu", 
+        "--mu",
         type=float,
-        help="Dirichlet smoothing parameter (larger = more smoothing)"
+        help="Dirichlet smoothing parameter (larger = more smoothing)",
     )
     parser.add_argument(
-        "--top_k", 
-        type=int,
-        help="Number of top results to return per query"
+        "--top_k", type=int, help="Number of top results to return per query"
     )
-    
+
     args = parser.parse_args()
     Config.update_from_args(args)
-    
+
     main()

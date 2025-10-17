@@ -1,3 +1,4 @@
+import math
 from util import extract_id
 
 def _parse_qrel(qrel):
@@ -107,6 +108,50 @@ def reciprocal_rank(submission: dict[list], qrel: dict[list]) -> dict[float]:
     rranks["mean"] = sum(rranks.values()) / len(rranks)
     return rranks
 
+def ndcg_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[float]:
+    """Computes NDCG at K
+
+    Args:
+        submission (dict[list]): Submission JSON, pid -> ids
+        qrel (dict[list]): Qrels JSON, pid -> tracks
+        k (int): K
+
+    Returns:
+        dict[float]: pid -> NDCG
+    """
+
+    def _dcg(relevances: list[float]) -> float:
+        dcg = 0.0
+        for i, rel in enumerate(relevances):
+            dcg += (2**rel - 1) / math.log2(i + 2)  # i + 2 because i starts from 0
+        return dcg
+
+    def _ndcg_for_pid(sub: list[dict], qrel: list[dict]):
+        qrel_tracks, qrel_artists = _parse_qrel(qrel)
+        relevances = []
+
+        for track in sub[:k]:
+            track_id = extract_id(track["track_uri"])
+            artist_id = extract_id(track["artist_uri"])
+
+            if track_id in qrel_tracks:
+                relevances.append(1.0)
+            elif artist_id in qrel_artists:
+                relevances.append(0.25)
+            else:
+                relevances.append(0.0)
+
+        dcg = _dcg(relevances)
+        idcg = _dcg([1.0 for _ in range(min(len(qrel_tracks), k))]) # ideal rank is 1.0 for all ranks
+
+        return dcg / idcg if idcg > 0 else 0.0
+
+    ndcgs = {}
+    for pid in submission:
+        ndcgs[pid] = _ndcg_for_pid(submission[pid], qrel[pid])
+
+    ndcgs["mean"] = sum(ndcgs.values()) / len(ndcgs)
+    return ndcgs
 
 def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
     """Generate P@3, P@5, P@10, P@R, RR report
@@ -124,7 +169,6 @@ def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
         qrel[str(playlist["pid"])] = playlist["tracks"]
 
 
-    p3 = precision_at_k(submission, qrel, 3)
     p5 = precision_at_k(submission, qrel, 5)
     p10 = precision_at_k(submission, qrel, 10)
     p100 = precision_at_k(submission, qrel, 100)
@@ -132,6 +176,10 @@ def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
 
     rr = reciprocal_rank(submission, qrel)
 
-    report = {"P@3": p3, "P@5": p5, "P@10": p10, "P@100": p100, "P@R": pr, "RR": rr}
+    ndcg_at_5 = ndcg_at_k(submission, qrel, 5)
+    ndcg_at_10 = ndcg_at_k(submission, qrel, 10)
+    ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
+
+    report = {"P@5": p5, "P@10": p10, "P@100": p100, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10, "NDCG@100": ndcg_at_100}
 
     return report
