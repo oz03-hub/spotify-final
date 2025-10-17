@@ -59,11 +59,14 @@ if __name__ == "__main__":
     inverted_index = {}
     inverted_index["DOCID_MAP"] = []
     inverted_index["TOTAL_DOCS"] = len(tracks_index)
+    inverted_index["DOC_LENGTHS"] = []
 
     for docid, (track_id, track) in tqdm.tqdm(enumerate(tracks_index.items())):
         tokens = Counter(tokenize(track["extended_text"]))
 
         inverted_index["DOCID_MAP"].append(track_id)
+        inverted_index["DOC_LENGTHS"].append(sum(tokens.values()))
+
         for token, tf in tokens.items():
             if token not in inverted_index:
                 inverted_index[token] = list()
@@ -71,4 +74,4 @@ if __name__ == "__main__":
     
     with open(dataset_path / "inverted_index.json", "w") as f:
         json.dump(inverted_index, f, indent=2)
-    print(f"Inverted index built and saved. {len(inverted_index)-2} unique tokens, {inverted_index["TOTAL_DOCS"]} Documents indexed.")
+    print(f"Inverted index built and saved. {len(inverted_index)-2} unique tokens, {inverted_index['TOTAL_DOCS']} Documents indexed.")

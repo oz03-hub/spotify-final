@@ -1,6 +1,6 @@
 import json
 import math
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from tqdm import tqdm
 import nltk
@@ -23,12 +23,13 @@ class Config:
     TEST_QUERIES_DIR = WORKSPACE_DIR / "test"
     VAL_QUERIES_DIR = WORKSPACE_DIR / "val"
 
-    RESULTS_DIR = WORKSPACE_DIR / "results" / "lmir_baseline"
+    RESULTS_DIR = WORKSPACE_DIR / "results" / "bm25_baseline"
     TEST_RESULTS_DIR = RESULTS_DIR / "test"
     VAL_RESULTS_DIR = RESULTS_DIR / "val"
 
     # Model parameters
-    MU = 2000  # Dirichlet smoothing parameter
+    k1 = 1.2
+    b = 0.75
     TOP_K = 100  # Number of top results to return
 
     @classmethod
@@ -42,8 +43,10 @@ class Config:
             cls.RESULTS_DIR = Path(args.results)
         if args.inverted_index:
             cls.INVERTED_INDEX = Path(args.inverted_index)
-        if args.mu:
-            cls.MU = args.mu
+        if args.k1:
+            cls.k1 = args.k1
+        if args.b:
+            cls.b = args.b
         if args.top_k:
             cls.TOP_K = args.top_k
 
@@ -56,16 +59,19 @@ class Config:
 # ============================================================================
 # RETRIEVAL MODEL
 # ============================================================================
-class DirichletLMRetriever:
-    """Dirichlet Language Model retriever using inverted index."""
+class BM25Retriever:
+    """BM25 retriever using inverted index."""
 
-    def __init__(self, mu=2000):
+    def __init__(self, k1=1.2, b=0.75):
         """
         Args:
-            mu: Dirichlet smoothing parameter. Larger values = more smoothing.
+            k1: BM25 Hyperparameter.
+            b: BM25 Hyperparameter.
         """
-        self.mu = mu
+        self.k1 = k1
+        self.b = b
         self.inverted_index = {}
+        self.docid_map = {}
         self.doc_lens = {}
         self.collection_freq = Counter()
         self.collection_len = 0
@@ -82,50 +88,46 @@ class DirichletLMRetriever:
         with open(index_path, "r") as f:
             data = json.load(f)
         self.inverted_index = data
+        self.average_doc_len = sum(data["DOC_LENGTHS"]) / data["TOTAL_DOCS"]
         self.doc_lens = data["DOC_LENGTHS"]
         self.total_docs = data["TOTAL_DOCS"]
 
-        # Build collection frequency and collection length
-        for term, postings in self.inverted_index.items():
-            if term in ["DOCID_MAP", "DOC_LENGTHS", "TOTAL_DOCS"]:
-                continue
-
-            cf = sum(tf for _, tf in postings)
-            self.collection_freq[term] = cf
-            self.collection_len += cf
-
     def retrieve(self, query_text, top_k=10):
         """
-        Retrieve and rank documents for a query using Dirichlet prior smoothing.
+        Retrieve and rank documents for a query using inverted index.
 
         Args:
             query_text: Query string
             top_k: Number of top results to return
 
         Returns:
-            List of (doc_id, score) tuples sorted by descending score.
+            List of (trackid, score) tuples, sorted by score descending
         """
         query_tokens = tokenize(query_text)
-        scores = defaultdict(float)
+        scores = {}
 
-        P_tc = {t: self.collection_freq[t] / self.collection_len for t in query_tokens if t in self.collection_freq}
-
-        for term in query_tokens:
-            if term not in self.inverted_index:
+        for query_term in query_tokens:
+            if query_term not in self.inverted_index:
                 continue
 
-            p_tc = P_tc.get(term, 1e-10)
-            postings = self.inverted_index[term]
+            postings = self.inverted_index[query_term]
+            df = len(postings)
+            idf = math.log((self.total_docs - df + 0.5) / (df + 0.5) + 1)
 
-            for doc_id, f_td in postings:
-                track_id = self.inverted_index["DOCID_MAP"][doc_id]
-                doc_len = self.doc_lens[doc_id]
-                p_td = (f_td + self.mu * p_tc) / (doc_len + self.mu)
-                scores[track_id] += math.log(p_td)
+            for posting in postings:
+                tf = posting[1]
+                docid = posting[0]
+                doc_len_ratio = self.doc_lens[docid] / self.average_doc_len
 
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        return ranked[:top_k]
+                denom = tf + self.k1 * (1 - self.b + self.b * doc_len_ratio)
+                score = idf * ((tf * (self.k1 + 1)) / denom)
 
+                trackid = self.inverted_index["DOCID_MAP"][docid]
+                if trackid not in scores:
+                    scores[trackid] = 0
+                scores[trackid] += score
+        ranked_results = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return ranked_results[:top_k]
 
 # ============================================================================
 # RESULTS PROCESSING
@@ -146,7 +148,7 @@ def process_queries(retriever, queries, top_k):
 def main():
     """Main execution function."""
     # Load inverted index
-    retriever = DirichletLMRetriever(mu=Config.MU)
+    retriever = BM25Retriever(k1=Config.k1, b=Config.b)
     retriever.load_inverted_index(Config.INVERTED_INDEX)
 
     corpus = load_corpus(Config.CORPUS_FILE)
@@ -194,9 +196,10 @@ if __name__ == "__main__":
     parser.add_argument("--results", help="Path to output directory for results")
     parser.add_argument("--inverted_index", help="Path to inverted index JSON file")
     parser.add_argument(
-        "--mu",
-        type=float,
-        help="Dirichlet smoothing parameter (larger = more smoothing)",
+        "--k1", type=float, help="BM25 k1 parameter"
+    )
+    parser.add_argument(
+        "--b", type=float, help="BM25 b parameter"
     )
     parser.add_argument(
         "--top_k", type=int, help="Number of top results to return per query"
