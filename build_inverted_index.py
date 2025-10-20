@@ -18,8 +18,8 @@ if __name__ == "__main__":
         split_avg_len = 0
         for file in tqdm.tqdm(files, desc=f"Processing {split} split"):
             file_path = split_path / file
-            min_pid = file.split("_")[0]
-            max_pid = file.split("_")[1].split(".json")[0]
+            min_pid = file.split("-")[0]
+            max_pid = file.split("-")[1].split(".json")[0]
             bucket_key = f"{min_pid}_{max_pid}"
             playlist_path_index[bucket_key] = str(file_path)
             with open(file_path, "r") as f:
@@ -60,10 +60,10 @@ if __name__ == "__main__":
 
     with open(dataset_path / "track_corpus.json", "w") as f:
         json.dump(tracks_index, f, indent=2)
-    
+
     with open(dataset_path / "playlist_path_index.json", "w") as f:
         json.dump(playlist_path_index, f, indent=2)
-    
+
     inverted_index = {}
     inverted_index["DOCID_MAP"] = []
     inverted_index["TOTAL_DOCS"] = len(tracks_index)
@@ -79,7 +79,9 @@ if __name__ == "__main__":
             if token not in inverted_index:
                 inverted_index[token] = list()
             inverted_index[token].append((docid, tf))
-    
+
     with open(dataset_path / "inverted_index.json", "w") as f:
         json.dump(inverted_index, f, indent=2)
-    print(f"Inverted index built and saved. {len(inverted_index)-2} unique tokens, {inverted_index['TOTAL_DOCS']} Documents indexed.")
+    print(
+        f"Inverted index built and saved. {len(inverted_index)-2} unique tokens, {inverted_index['TOTAL_DOCS']} Documents indexed."
+    )
