@@ -31,8 +31,8 @@ class Config:
     # Model parameters
     N_FACTORS = 200  # Latent factors
     REGULARIZATION = 0.01  # L2 regularization
-    ITERATIONS = 15  # Number of ALS iterations
-    ALPHA = 40.0  # Confidence weight multiplier
+    ITERATIONS = 50  # Number of ALS iterations
+    ALPHA = 30.0  # Confidence weight multiplier
     TOP_K = 100  # Number of results to return
     
     # Training options
@@ -104,6 +104,7 @@ class WMFModel:
         
         # Placeholders for playlists and model
         self.playlist_tf_rows = []
+        self.playlist_idx_to_id = {}
         self.model = None
         self.num_tracks = len(self.track_ids)
 
@@ -147,6 +148,12 @@ class WMFModel:
         Args:
             playlist: Dictionary with 'name' and 'tracks' fields
         """
+        playlist_id = playlist.get("pid")
+        if playlist_id in self.playlist_idx_to_id:
+            print(f"Warning: Playlist {playlist_id} already added, skipping.")
+            return
+
+        self.playlist_idx_to_id[playlist_id] = self.num_tracks + len(self.playlist_tf_rows)
         playlist_name = playlist.get("name", "")
         tokens = tokenize(playlist_name)
         tf_counter = Counter(tokens)
@@ -219,6 +226,58 @@ class WMFModel:
         print(f"\nFactorization complete:")
         print(f"  Item factors shape: {self.model.item_factors.shape}")
         print(f"  User factors shape: {self.model.user_factors.shape}")
+    
+    def retrieve_playlists(self, query_text, top_k=10):
+        """
+        Retrieve top-k playlists for a query based on latent similarity.
+        
+        Args:
+            query_text: Query string
+            top_k: Number of results to return
+        Returns:
+            List of (playlist_id, score) tuples
+        """
+
+        if self.model is None:
+            raise ValueError("Model not trained. Call compute_factorization() first.")
+        
+        tokens = tokenize(query_text)
+        tf_counter = Counter(tokens)
+
+        cols = []
+        data = []
+        for word, count in tf_counter.items():
+            if word in self.word_to_idx:
+                cols.append(self.word_to_idx[word])
+                data.append(count)
+        if not cols:
+            return []
+        
+        query_vec = csr_matrix(
+            (data, ([0] * len(cols), cols)),
+            shape=(1, len(self.vocab)),
+            dtype=np.float32
+        )
+        
+        # Get item factors (vocab embeddings) and user factors (entity embeddings)
+        item_factors = self.model.item_factors  # vocab embeddings
+        user_factors = self.model.user_factors  # entity embeddings (tracks + playlists)
+        
+        # Project query into latent space using item factors
+        query_emb = query_vec.dot(item_factors).ravel()
+        
+        # Compute similarities with track embeddings only
+        playlist_embeddings = user_factors[self.num_tracks:]
+        similarities = playlist_embeddings.dot(query_emb)
+        
+        # Get top-k tracks
+        top_k = min(top_k, len(similarities))
+        top_indices = np.argpartition(-similarities, top_k)[:top_k]
+        top_indices = top_indices[np.argsort(-similarities[top_indices])]
+        
+        results = [(self.playlist_idx_to_id[idx], float(similarities[idx])) for idx in top_indices]
+        return results
+    
 
     def retrieve(self, query_text, top_k=100):
         """
@@ -291,6 +350,7 @@ class WMFModel:
         metadata = {
             'track_ids': self.track_ids,
             'track_id_to_idx': self.track_id_to_idx,
+            'playlist_idx_to_id': self.playlist_idx_to_id,
             'vocab': self.vocab,
             'word_to_idx': self.word_to_idx,
             'num_tracks': self.num_tracks,

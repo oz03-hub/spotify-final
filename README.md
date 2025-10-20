@@ -55,5 +55,5 @@ This will display the mean performance of the baseline. To change the baseline b
 [X] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
 [ ] Add closest playlist name retriever, probably add to `mf_baseline.py`
 [X] Switch LMIR to inverted index implementation.
-[ ] Add WMF implementation
+[X] Add WMF implementation
 [ ] Start collecting training data for second stage
