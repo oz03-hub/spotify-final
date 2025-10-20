@@ -4,7 +4,7 @@
 Clone this repository.
 
 
-Download the dataset from: [https://drive.google.com/file/d/19PdE-wpWuSUIId6nDhvwEhT6sjfIilXD/view?usp=sharing](https://drive.google.com/file/d/1O9euNDgvpkyG0sa7oYya4E5fnPjsqYYS/view?usp=sharing), place the zip at the root of the repository. Unzip the small dataset, this is the smaller version with 10,000 playlists. It should be unzipped into dataset directory. To confirm verify `dataset/train/`, `dataset/test/`, `dataset/tracks_index.json` exists after unzipping.
+Download the dataset from: https://drive.google.com/file/d/1O9euNDgvpkyG0sa7oYya4E5fnPjsqYYS/view?usp=sharing, place the zip at the root of the repository. Unzip the small dataset, this is the smaller version with 10,000 playlists. It should be unzipped into dataset directory. To confirm verify `dataset/train/`, `dataset/test/`, `dataset/tracks_index.json` exists after unzipping.
 
 You need a fresh python environment. 
 1. Create a python environment `python -m venv venv`.
