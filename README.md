@@ -52,6 +52,8 @@ python view_measures.py
 This will display the mean performance of the baseline. To change the baseline being evaluated, you need to change `baseline_name` variable in the code.
 
 # ToDo
-[] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
-[] Add closest playlist name retriever, probably add to `mf_baseline.py`
-[] Switch LMIR to inverted index implementation.
+[X] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
+[ ] Add closest playlist name retriever, probably add to `mf_baseline.py`
+[X] Switch LMIR to inverted index implementation.
+[ ] Add WMF implementation
+[ ] Start collecting training data for second stage
