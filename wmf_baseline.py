@@ -5,8 +5,9 @@ from collections import Counter
 from pathlib import Path
 from tqdm import tqdm
 import nltk
-from scipy.sparse import csr_matrix, vstack
+from scipy.sparse import csr_matrix, vstack, save_npz, load_npz
 from implicit.als import AlternatingLeastSquares
+import pickle
 
 from util import load_corpus, load_queries, get_query_files, save_results, tokenize
 
@@ -25,6 +26,7 @@ class Config:
     CORPUS_FILE = WORKSPACE_DIR / "track_corpus.json"
     TRAIN_QUERIES_DIR = WORKSPACE_DIR / "train"
     RESULTS_DIR = WORKSPACE_DIR / "results" / "wmf_baseline"
+    MODEL_DIR = Path("model")
 
     # Model parameters
     N_FACTORS = 200  # Latent factors
@@ -32,6 +34,10 @@ class Config:
     ITERATIONS = 15  # Number of ALS iterations
     ALPHA = 40.0  # Confidence weight multiplier
     TOP_K = 100  # Number of results to return
+    
+    # Training options
+    RETRAIN = False  # Whether to retrain even if model exists
+    USE_GPU = False  # Whether to use GPU if available
 
     @classmethod
     def update_from_args(cls, args):
@@ -46,6 +52,8 @@ class Config:
             cls.TRAIN_QUERIES_DIR = Path(args.train_queries)
         if args.results:
             cls.RESULTS_DIR = Path(args.results)
+        if args.model_dir:
+            cls.MODEL_DIR = Path(args.model_dir)
         if args.n_factors:
             cls.N_FACTORS = args.n_factors
         if args.regularization:
@@ -56,9 +64,14 @@ class Config:
             cls.ALPHA = args.alpha
         if args.top_k:
             cls.TOP_K = args.top_k
+        if args.retrain:
+            cls.RETRAIN = True
+        if args.no_gpu:
+            cls.USE_GPU = False
 
-        # Ensure results directory exists
+        # Ensure directories exist
         cls.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        cls.MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -155,7 +168,7 @@ class WMFModel:
             self.playlist_tf_rows.append(row)
 
     def compute_factorization(self, n_factors=200, regularization=0.01, 
-                            iterations=15, alpha=40.0):
+                            iterations=15, alpha=40.0, use_gpu=True):
         """
         Build combined TF matrix and perform WMF using ALS.
         
@@ -164,6 +177,7 @@ class WMFModel:
             regularization: L2 regularization parameter
             iterations: Number of ALS iterations
             alpha: Confidence weight multiplier (C = 1 + alpha * r)
+            use_gpu: Whether to use GPU if available
         """
         print(f"\nBuilding combined matrix (tracks + playlists)...")
         
@@ -180,8 +194,6 @@ class WMFModel:
         print(f"Matrix density: {combined_matrix.nnz / (combined_matrix.shape[0] * combined_matrix.shape[1]):.6f}")
         
         # Convert to item-user format for implicit library
-        # The implicit library expects: item_user_matrix where rows=items, cols=users
-        # In our case: rows=entities (tracks+playlists), cols=vocab (features)
         interaction_matrix = combined_matrix.tocsr().astype(np.float32)
         
         print(f"\nTraining Weighted Matrix Factorization:")
@@ -189,6 +201,7 @@ class WMFModel:
         print(f"  Regularization: {regularization}")
         print(f"  Iterations: {iterations}")
         print(f"  Alpha: {alpha}")
+        print(f"  GPU: {use_gpu}")
         
         # Initialize and train WMF model
         self.model = AlternatingLeastSquares(
@@ -196,6 +209,7 @@ class WMFModel:
             regularization=regularization,
             iterations=iterations,
             alpha=alpha,
+            use_gpu=use_gpu,
             random_state=42,
             calculate_training_loss=True
         )
@@ -242,17 +256,15 @@ class WMFModel:
             dtype=np.float32
         )
         
-        # Get factors from trained model
-        # item_factors = entity embeddings (tracks + playlists)
-        # user_factors = vocab embeddings (words/features)
-        item_factors = self.model.item_factors  # entity embeddings (tracks + playlists)
-        user_factors = self.model.user_factors  # vocab embeddings
+        # Get item factors (vocab embeddings) and user factors (entity embeddings)
+        item_factors = self.model.item_factors  # vocab embeddings
+        user_factors = self.model.user_factors  # entity embeddings (tracks + playlists)
         
-        # Project query into latent space using vocab embeddings
-        query_emb = query_vec.dot(user_factors).ravel()
+        # Project query into latent space using item factors
+        query_emb = query_vec.dot(item_factors).ravel()
         
         # Compute similarities with track embeddings only
-        track_embeddings = item_factors[:self.num_tracks]
+        track_embeddings = user_factors[:self.num_tracks]
         similarities = track_embeddings.dot(query_emb)
         
         # Get top-k tracks
@@ -262,6 +274,93 @@ class WMFModel:
         
         results = [(self.track_ids[idx], float(similarities[idx])) for idx in top_indices]
         return results
+
+    def save(self, model_dir):
+        """
+        Save model to disk.
+        
+        Args:
+            model_dir: Directory to save model files
+        """
+        model_dir = Path(model_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"\nSaving model to {model_dir}/")
+        
+        # Save metadata
+        metadata = {
+            'track_ids': self.track_ids,
+            'track_id_to_idx': self.track_id_to_idx,
+            'vocab': self.vocab,
+            'word_to_idx': self.word_to_idx,
+            'num_tracks': self.num_tracks,
+        }
+        with open(model_dir / 'metadata.pkl', 'wb') as f:
+            pickle.dump(metadata, f)
+        
+        # Save sparse matrices
+        save_npz(model_dir / 'track_tf_matrix.npz', self.track_tf_matrix)
+        if self.playlist_tf_rows:
+            playlist_tf_matrix = vstack(self.playlist_tf_rows)
+            save_npz(model_dir / 'playlist_tf_matrix.npz', playlist_tf_matrix)
+        
+        # Save ALS model
+        if self.model is not None:
+            with open(model_dir / 'als_model.pkl', 'wb') as f:
+                pickle.dump(self.model, f)
+        
+        print("✓ Model saved successfully")
+
+    @classmethod
+    def load(cls, model_dir, corpus):
+        """
+        Load model from disk.
+        
+        Args:
+            model_dir: Directory containing saved model files
+            corpus: Track corpus dictionary
+            
+        Returns:
+            WMFModel instance
+        """
+        model_dir = Path(model_dir)
+        print(f"\nLoading model from {model_dir}/")
+        
+        # Create instance with minimal initialization
+        instance = cls.__new__(cls)
+        instance.corpus = corpus
+        
+        # Load metadata
+        with open(model_dir / 'metadata.pkl', 'rb') as f:
+            metadata = pickle.load(f)
+        
+        instance.track_ids = metadata['track_ids']
+        instance.track_id_to_idx = metadata['track_id_to_idx']
+        instance.vocab = metadata['vocab']
+        instance.word_to_idx = metadata['word_to_idx']
+        instance.num_tracks = metadata['num_tracks']
+        
+        # Load sparse matrices
+        instance.track_tf_matrix = load_npz(model_dir / 'track_tf_matrix.npz')
+        
+        playlist_matrix_path = model_dir / 'playlist_tf_matrix.npz'
+        if playlist_matrix_path.exists():
+            playlist_tf_matrix = load_npz(playlist_matrix_path)
+            # Convert back to list of rows
+            instance.playlist_tf_rows = [playlist_tf_matrix.getrow(i) for i in range(playlist_tf_matrix.shape[0])]
+        else:
+            instance.playlist_tf_rows = []
+        
+        # Load ALS model
+        als_model_path = model_dir / 'als_model.pkl'
+        if als_model_path.exists():
+            with open(als_model_path, 'rb') as f:
+                instance.model = pickle.load(f)
+        else:
+            instance.model = None
+        
+        print("✓ Model loaded successfully")
+        return instance
 
 
 # ============================================================================
@@ -294,27 +393,50 @@ def main():
     print(f"Loading corpus from {Config.CORPUS_FILE}")
     corpus = load_corpus(Config.CORPUS_FILE)
     
-    # Initialize model
-    model = WMFModel(corpus)
+    # Define model path
+    model_path = Config.MODEL_DIR / "wmf"
+    model_exists = (model_path / "metadata.pkl").exists()
     
-    # Load training playlists
-    train_query_files = get_query_files(Config.TRAIN_QUERIES_DIR)
-    print(f"\nFound {len(train_query_files)} training query files")
+    # Determine whether to train or load
+    should_train = Config.RETRAIN or not model_exists
     
-    for query_file in train_query_files:
-        print(f"\nProcessing training queries from: {query_file.name}")
-        queries = load_queries(query_file)
-        for query in tqdm(queries, desc="Adding playlists"):
-            model.add_playlist(query)
-    
-    # Train model
-    print(f"\nTraining model with {len(model.playlist_tf_rows)} playlists...")
-    model.compute_factorization(
-        n_factors=Config.N_FACTORS,
-        regularization=Config.REGULARIZATION,
-        iterations=Config.ITERATIONS,
-        alpha=Config.ALPHA
-    )
+    if should_train:
+        print(f"\n{'='*70}")
+        print("TRAINING NEW MODEL")
+        print('='*70)
+        
+        # Initialize model
+        model = WMFModel(corpus)
+        
+        # Load training playlists
+        train_query_files = get_query_files(Config.TRAIN_QUERIES_DIR)
+        print(f"\nFound {len(train_query_files)} training query files")
+        
+        for query_file in train_query_files:
+            print(f"\nProcessing training queries from: {query_file.name}")
+            queries = load_queries(query_file)
+            for query in tqdm(queries, desc="Adding playlists"):
+                model.add_playlist(query)
+        
+        # Train model
+        print(f"\nTraining model with {len(model.playlist_tf_rows)} playlists...")
+        model.compute_factorization(
+            n_factors=Config.N_FACTORS,
+            regularization=Config.REGULARIZATION,
+            iterations=Config.ITERATIONS,
+            alpha=Config.ALPHA,
+            use_gpu=Config.USE_GPU
+        )
+        
+        # Save model
+        model.save(model_path)
+    else:
+        print(f"\n{'='*70}")
+        print("LOADING EXISTING MODEL")
+        print('='*70)
+        
+        # Load existing model
+        model = WMFModel.load(model_path, corpus)
     
     # Process test and val splits
     for split in ["test", "val"]:
@@ -362,6 +484,10 @@ if __name__ == "__main__":
         help="Path to output directory for results"
     )
     parser.add_argument(
+        "--model_dir",
+        help="Path to directory for saving/loading models"
+    )
+    parser.add_argument(
         "--n_factors",
         type=int,
         help="Number of latent factors for WMF"
@@ -385,6 +511,16 @@ if __name__ == "__main__":
         "--top_k",
         type=int,
         help="Number of top results to return per query"
+    )
+    parser.add_argument(
+        "--retrain",
+        action="store_true",
+        help="Force retraining even if saved model exists"
+    )
+    parser.add_argument(
+        "--no_gpu",
+        action="store_true",
+        help="Disable GPU acceleration"
     )
     
     args = parser.parse_args()

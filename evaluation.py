@@ -171,15 +171,15 @@ def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
 
     p5 = precision_at_k(submission, qrel, 5)
     p10 = precision_at_k(submission, qrel, 10)
-    p100 = precision_at_k(submission, qrel, 100)
+    # p100 = precision_at_k(submission, qrel, 100)
     pr = r_precision(submission, qrel)
 
     rr = reciprocal_rank(submission, qrel)
 
     ndcg_at_5 = ndcg_at_k(submission, qrel, 5)
     ndcg_at_10 = ndcg_at_k(submission, qrel, 10)
-    ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
+    # ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
 
-    report = {"P@5": p5, "P@10": p10, "P@100": p100, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10, "NDCG@100": ndcg_at_100}
+    report = {"P@5": p5, "P@10": p10, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10}
 
     return report
