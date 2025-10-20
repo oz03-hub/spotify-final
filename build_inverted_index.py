@@ -6,8 +6,6 @@ from pathlib import Path
 from util import extract_id, tokenize
 from collections import Counter
 
-nltk.download("punkt", quiet=True)
-
 if __name__ == "__main__":
     dataset_path = Path("dataset")
     splits = ["train", "val", "test"]

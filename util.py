@@ -4,6 +4,10 @@ from pathlib import Path
 import os
 import nltk
 
+nltk.download("punkt", quiet=True)
+nltk.download("punkt_tab", quiet=True)
+
+
 def extract_id(uri):
     return uri.split(":")[2]
 
@@ -29,21 +33,24 @@ def get_query_files(queries_dir):
     queries_path = Path(queries_dir)
     return [queries_path / f for f in os.listdir(queries_path) if f.endswith(".json")]
 
+
 def save_results(results, query_file, results_dir):
     """Save results to JSON file."""
     # Create output filename preserving original query filename
     output_file = results_dir / query_file
-    
+
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
-    
+
     print(f"Results written to: {output_file}")
+
 
 def load_playlist_path_index(index_file):
     """Load playlist path index from JSON file."""
     with open(index_file, "r", encoding="utf-8") as f:
         return json.load(f)
-    
+
+
 def find_playlist_file(playlist_id, playlist_path_index):
     """Find the file path for a given playlist ID."""
     for bucket_key, file_path in playlist_path_index.items():
@@ -51,6 +58,7 @@ def find_playlist_file(playlist_id, playlist_path_index):
         if min_pid <= playlist_id <= max_pid:
             return Path(file_path)
     return None
+
 
 # ============================================================================
 # TEXT PREPROCESSING
