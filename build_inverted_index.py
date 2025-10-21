@@ -12,6 +12,11 @@ if __name__ == "__main__":
 
     playlist_path_index = {}
     tracks_index = {}
+    playlist_inverted_index = {}
+    playlist_inverted_index["DOCID_MAP"] = []
+    playlist_inverted_index["TOTAL_DOCS"] = 0
+    playlist_inverted_index["DOC_LENGTHS"] = []
+
     for split in splits:
         split_path = dataset_path / split
         files = os.listdir(split_path)
@@ -26,6 +31,16 @@ if __name__ == "__main__":
                 data = orjson.loads(f.read())
 
                 for playlist in data["playlists"]:
+                    p_tokens = Counter(tokenize(f"{playlist['name']} {playlist.get('description', '')}"))
+                    playlist_inverted_index["DOCID_MAP"].append(playlist["pid"])
+                    playlist_inverted_index["DOC_LENGTHS"].append(sum(p_tokens.values()))
+                    playlist_inverted_index["TOTAL_DOCS"] += 1
+
+                    for token, tf in p_tokens.items():
+                        if token not in playlist_inverted_index:
+                            playlist_inverted_index[token] = list()
+                        playlist_inverted_index[token].append((playlist["pid"], tf))
+
                     split_avg_len += len(playlist["tracks"])
                     for track in playlist["tracks"]:
                         track_id = extract_id(track["track_uri"])
@@ -63,6 +78,9 @@ if __name__ == "__main__":
 
     with open(dataset_path / "playlist_path_index.json", "w") as f:
         json.dump(playlist_path_index, f, indent=2)
+
+    with open(dataset_path / "playlist_inverted_index.json", "w") as f:
+        json.dump(playlist_inverted_index, f, indent=2)
 
     inverted_index = {}
     inverted_index["DOCID_MAP"] = []
