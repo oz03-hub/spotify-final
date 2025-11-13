@@ -7,3 +7,4 @@ implicit
 nltk
 scipy
 scikit-learn
+xgboost

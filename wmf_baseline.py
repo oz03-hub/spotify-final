@@ -280,10 +280,18 @@ class WMFModel:
         top_indices = np.argpartition(-similarities, top_k)[:top_k]
         top_indices = top_indices[np.argsort(-similarities[top_indices])]
 
-        results = [
-            (self.playlist_idx_to_id[idx], float(similarities[idx]))
-            for idx in top_indices
-        ]
+        #Inverse mapping of playlist_idx_to_id, key = global_index, value = playlist_id
+        idx_to_playlist_id = {global_idx: pid for pid, global_idx in self.playlist_idx_to_id.items()}
+
+        results = []
+        for idx in top_indices:
+            # Convert local playlist index within top_indices array to global index
+            global_idx = int(idx) + self.num_tracks
+            if global_idx in idx_to_playlist_id:
+                #Get global index
+                playlist_id = idx_to_playlist_id[global_idx]
+                results.append((playlist_id, float(similarities[idx])))
+
         return results
 
     def score_query_doc(self, query_text, track_id):
@@ -493,6 +501,7 @@ class WMFModel:
 
         instance.track_ids = metadata["track_ids"]
         instance.track_id_to_idx = metadata["track_id_to_idx"]
+        instance.playlist_idx_to_id = metadata["playlist_idx_to_id"]
         instance.vocab = metadata["vocab"]
         instance.word_to_idx = metadata["word_to_idx"]
         instance.num_tracks = metadata["num_tracks"]
