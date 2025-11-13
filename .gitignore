@@ -1,5 +1,6 @@
-__pycache__/
 dataset*/
 venv/
 .DS_Store
 model/
+logs/
+*__pycache__*/

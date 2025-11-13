@@ -77,6 +77,12 @@ class BM25Retriever:
         self.collection_len = 0
         self.total_docs = 0
 
+    def load_inverted_index_from_object(self, data):
+        self.inverted_index = data
+        self.average_doc_len = sum(data["DOC_LENGTHS"]) / data["TOTAL_DOCS"]
+        self.doc_lens = data["DOC_LENGTHS"]
+        self.total_docs = data["TOTAL_DOCS"]
+
     def load_inverted_index(self, index_path):
         """
         Load inverted index from JSON file.
@@ -87,10 +93,30 @@ class BM25Retriever:
         print(f"Loading inverted index from {index_path}")
         with open(index_path, "r") as f:
             data = json.load(f)
-        self.inverted_index = data
-        self.average_doc_len = sum(data["DOC_LENGTHS"]) / data["TOTAL_DOCS"]
-        self.doc_lens = data["DOC_LENGTHS"]
-        self.total_docs = data["TOTAL_DOCS"]
+        self.load_inverted_index_from_object(data)
+
+    def score_query_doc(self, query_text, doc_text):
+        query_tokens = tokenize(query_text)
+        doc_tokens = tokenize(doc_text)
+        score = 0.0
+        doc_len = len(doc_tokens)
+        doc_tokens = Counter(doc_tokens)
+
+        for query_term in query_tokens:
+            if query_term not in self.inverted_index:
+                continue
+
+            postings = self.inverted_index[query_term]
+            df = len(postings)
+            idf = math.log((self.total_docs - df + 0.5) / (df + 0.5) + 1)
+
+            tf = doc_tokens.get(query_term, 0)
+            doc_len_ratio = doc_len / self.average_doc_len
+
+            denom = tf + self.k1 * (1 - self.b + self.b * doc_len_ratio)
+            term_score = idf * ((tf * (self.k1 + 1)) / denom)
+            score += term_score
+        return score
 
     def retrieve(self, query_text, top_k=10):
         """
@@ -128,6 +154,7 @@ class BM25Retriever:
                 scores[trackid] += score
         ranked_results = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return ranked_results[:top_k]
+
 
 # ============================================================================
 # RESULTS PROCESSING
@@ -179,7 +206,7 @@ def main():
                 results[pid] = replacement_tracks
 
             save_results(results, query_file.name, result_dir)
-    print("\n✓ All queries processed successfully")
+    print("\nAll queries processed successfully")
 
 
 if __name__ == "__main__":
@@ -195,12 +222,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--results", help="Path to output directory for results")
     parser.add_argument("--inverted_index", help="Path to inverted index JSON file")
-    parser.add_argument(
-        "--k1", type=float, help="BM25 k1 parameter"
-    )
-    parser.add_argument(
-        "--b", type=float, help="BM25 b parameter"
-    )
+    parser.add_argument("--k1", type=float, help="BM25 k1 parameter")
+    parser.add_argument("--b", type=float, help="BM25 b parameter")
     parser.add_argument(
         "--top_k", type=int, help="Number of top results to return per query"
     )

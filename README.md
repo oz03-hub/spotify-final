@@ -7,17 +7,12 @@ Clone this repository.
 Download the dataset from: https://drive.google.com/file/d/1O9euNDgvpkyG0sa7oYya4E5fnPjsqYYS/view?usp=sharing, place the zip at the root of the repository. Unzip the small dataset, this is the smaller version with 10,000 playlists. It should be unzipped into dataset directory. To confirm verify `dataset/train/`, `dataset/test/`, `dataset/tracks_index.json` exists after unzipping.
 
 You need a fresh python environment. 
-1. Create a python environment `python -m venv venv`.
-2. Activate the environment `source venv/bin/active`.
-3. Install packages `pip install -r requirements.txt`.
-
-If you use conda, the first two steps will be different:
-1. Create a conda environment `conda create --name ENV_NAME`.
-2. Activate the environment `conda activate ENV_NAME`.
-3. Install packages `conda install --file requirements.txt`.
-4. With the environment activated run `python build_inverted_index.py`.
+1. Run `./scripts/setup_env.sh`. (If it does not work, please resolve the error with your packager, the libraries listed there must be installed).
+2. With the environment activated run `python build_inverted_index.py` to verify it is working.
 
 ## Running the baselines
+For Unity users, the SLURM files are located in `scripts`, you can invoke each by `sbatch file run_*.sh`
+
 Each `*_baseline.py` will output it's ranked results into `dataset/results/*_baseline/`.
 
 ### Random Baseline
@@ -38,23 +33,27 @@ All configurations for smoothing and datapath etc, are made in the python file i
 
 This will also save generated paylists under `dataset/results/lmir_baseline/`.
 
-### Matrix Factorization on Song-Playlist Entities
+### BM25
+```
+python bm25_baseline.py
+```
+
+### SVD Matrix Factorization on Song-Playlist Entities
 This approach follows the cold-start example used in vl6 method in the survey paper.
 ```
-python mf_baseline.py
+python svd_baseline.py
+```
+
+### Weighted Matrix Factorization on Song-Playlist Entities
+```
+python wmf_baseline.py
 ```
 
 ## Viewing Evaluation Measures
 
 ```
-python view_measures.py
+python view_measures.py --baseline lmir_baseline
 ```
 
-This will display the mean performance of the baseline. To change the baseline being evaluated, you need to change `baseline_name` variable in the code.
+To change the baseline viewed, just change the argument.
 
-# ToDo
-[X] Add cli arguments for each baseline/measure, so we don't have to modify code to run different settings
-[ ] Add closest playlist name retriever, probably add to `mf_baseline.py`
-[X] Switch LMIR to inverted index implementation.
-[X] Add WMF implementation
-[ ] Start collecting training data for second stage

@@ -29,7 +29,7 @@ class Config:
 
     # Model parameters
     MU = 2000  # Dirichlet smoothing parameter
-    TOP_K = 100  # Number of top results to return
+    TOP_K = 1000  # Number of top results to return
 
     @classmethod
     def update_from_args(cls, args):
@@ -70,17 +70,8 @@ class DirichletLMRetriever:
         self.collection_freq = Counter()
         self.collection_len = 0
         self.total_docs = 0
-
-    def load_inverted_index(self, index_path):
-        """
-        Load inverted index from JSON file.
-
-        Args:
-            index_path: Path to inverted index JSON file
-        """
-        print(f"Loading inverted index from {index_path}")
-        with open(index_path, "r") as f:
-            data = json.load(f)
+    
+    def load_inverted_index_from_object(self, data):
         self.inverted_index = data
         self.doc_lens = data["DOC_LENGTHS"]
         self.total_docs = data["TOTAL_DOCS"]
@@ -93,6 +84,19 @@ class DirichletLMRetriever:
             cf = sum(tf for _, tf in postings)
             self.collection_freq[term] = cf
             self.collection_len += cf
+
+
+    def load_inverted_index(self, index_path):
+        """
+        Load inverted index from JSON file.
+
+        Args:
+            index_path: Path to inverted index JSON file
+        """
+        print(f"Loading inverted index from {index_path}")
+        with open(index_path, "r") as f:
+            data = json.load(f)
+        self.load_inverted_index_from_object(data)
 
     def retrieve(self, query_text, top_k=10):
         """

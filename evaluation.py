@@ -11,6 +11,24 @@ def _parse_qrel(qrel):
 
     return qrel_tracks, qrel_artists
 
+def recall_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[float]:
+    def _recall_for_pid(sub: list[dict], qrel: list[dict]):
+        qrel_tracks, qrel_artists = _parse_qrel(qrel)
+
+        correct = 0
+        for track in sub[:k]:
+            track_id = extract_id(track["track_uri"])
+
+            if track_id in qrel_tracks:
+                correct += 1
+        return correct / len(qrel_tracks)
+
+    precisions = {}
+    for pid in submission:
+        precisions[pid] = _recall_for_pid(submission[pid], qrel[pid])
+
+    precisions["mean"] = sum(precisions.values()) / len(precisions)
+    return precisions
 
 def precision_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[float]:
     """Computes precision at K with challenge formula
@@ -180,6 +198,9 @@ def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
     ndcg_at_10 = ndcg_at_k(submission, qrel, 10)
     # ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
 
-    report = {"P@5": p5, "P@10": p10, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10}
+    r500 = recall_at_k(submission, qrel, 500)
+    r1000 = recall_at_k(submission, qrel, 1000)
+
+    report = {"P@5": p5, "P@10": p10, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10, "R@500": r500, "R@1000": r1000}
 
     return report

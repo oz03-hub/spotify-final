@@ -65,4 +65,4 @@ def find_playlist_file(playlist_id, playlist_path_index):
 # ============================================================================
 def tokenize(text):
     """Simple word tokenizer and normalizer."""
-    return [w.lower() for w in nltk.word_tokenize(text) if w.isalnum()]
+    return [w.lower() for w in nltk.word_tokenize(text)]

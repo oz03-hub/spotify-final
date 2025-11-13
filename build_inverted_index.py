@@ -55,6 +55,7 @@ if __name__ == "__main__":
                                     + track["album_name"]
                                 )
                             )
+                            tracks_index[track_id]["pf"] = 1
                             del tracks_index[track_id]["pos"]
 
                         if split == "train":
@@ -68,9 +69,10 @@ if __name__ == "__main__":
                             tracks_index[track_id]["extended_text"] += (
                                 " " + extended_text
                             )
+                            tracks_index[track_id]["pf"] += 1
 
         print(
-            f"Average number of playlists per file in {split} split: {split_avg_len / len(files)}"
+            f"Average number of playlists per file in {split} split: {split_avg_len / len(files) * 1000}"
         )
 
     with open(dataset_path / "track_corpus.json", "w") as f:
