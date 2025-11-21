@@ -23,7 +23,7 @@ class Config:
     RERANKER_VAL_DIR = WORKSPACE_DIR / "reranker_dataset" / "val"
     RERANKER_TEST_DIR = WORKSPACE_DIR / "reranker_dataset" / "test"
 
-    RESULTS_DIR = WORKSPACE_DIR / "results" / "ltr_baseline_2"
+    RESULTS_DIR = WORKSPACE_DIR / "results" / "ltr_baseline"
     TEST_RESULTS_DIR = RESULTS_DIR / "test"
     VAL_RESULTS_DIR = RESULTS_DIR / "val"
 
