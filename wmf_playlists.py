@@ -227,10 +227,12 @@ def get_average_track_embedding(model, track_uris):
     return avg_embedding
 
 
-def process_queries(model: WMFModel, queries, top_k):
+def process_queries(model: WMFModel, queries, top_kp):
     """Process all queries and save results."""
-    playlist_results = save_playlists(model, queries, top_k)
+    playlist_results = save_playlists(model, queries, top_kp)
     song_results = save_songs(playlist_results)
+
+    print("TOP KP", top_kp)
 
     final_results = {}
     idx = 0
@@ -280,54 +282,54 @@ def process_queries(model: WMFModel, queries, top_k):
     
     return playlist_results, song_results, final_results
 
-def debug_process_queries(model: WMFModel, queries, top_k):
-    """Process all queries and print results (K_S songs randomly sampled for each top K_P playlists)."""
-    results = {}
-    for idx, playlist in enumerate(tqdm(queries, desc="Retrieving")):
-        query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}"
-        pid = playlist.get("pid")
-        # retrieved = [(playlist_id, score), ...]
-        retrieved = model.retrieve_playlists(query_text, top_k=top_k)
-        # results[pid] = retrieved
+# def debug_process_queries(model: WMFModel, queries, top_k):
+#     """Process all queries and print results (K_S songs randomly sampled for each top K_P playlists)."""
+#     results = {}
+#     for idx, playlist in enumerate(tqdm(queries, desc="Retrieving")):
+#         query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}"
+#         pid = playlist.get("pid")
+#         # retrieved = [(playlist_id, score), ...]
+#         retrieved = model.retrieve_playlists(query_text, top_k=top_k)
+#         # results[pid] = retrieved
 
-        # Randomly sample 2 songs from each retrieved playlist
-        sampled_results = []
-        sampled_songs = []
-        for ret_pid, ret_score in retrieved:
-            pid_file = util.find_playlist_file(ret_pid, ppi)
-            with open(pid_file) as f:
-                p_file = json.load(f)
-            pls = p_file["playlists"]
+#         # Randomly sample 2 songs from each retrieved playlist
+#         sampled_results = []
+#         sampled_songs = []
+#         for ret_pid, ret_score in retrieved:
+#             pid_file = util.find_playlist_file(ret_pid, ppi)
+#             with open(pid_file) as f:
+#                 p_file = json.load(f)
+#             pls = p_file["playlists"]
             
-            # Get the playlist tracks
-            playlist_data = pls[ret_pid % 1000]
-            track_names = []
-            track_data = playlist_data.get("tracks", [])
-            for track in track_data:
-                track_names.append(track["track_name"])
+#             # Get the playlist tracks
+#             playlist_data = pls[ret_pid % 1000]
+#             track_names = []
+#             track_data = playlist_data.get("tracks", [])
+#             for track in track_data:
+#                 track_names.append(track["track_name"])
             
-            # Randomly sample 2 songs (or fewer if playlist has less than 2)
-            sample_size = min(Config.K_S, len(track_names))
-            sampled_tracks = random.sample(track_names, sample_size) if sample_size > 0 else []
+#             # Randomly sample 2 songs (or fewer if playlist has less than 2)
+#             sample_size = min(Config.K_S, len(track_names))
+#             sampled_tracks = random.sample(track_names, sample_size) if sample_size > 0 else []
             
-            sampled_songs.extend(sampled_tracks)
-        results[pid] = sampled_results
+#             sampled_songs.extend(sampled_tracks)
+#         results[pid] = sampled_results
 
-        # # Printing query text + top 10 retrieved playlist titles
-        # if idx % 100 == 0:
-        #     print()
-        #     print(f"Query TEXT: {query_text}")
-        #     titles = []
-        #     for ret_pid, ret_score in retrieved[:10]:
-        #         pid_file = util.find_playlist_file(ret_pid, ppi)
-        #         with open(pid_file) as f:
-        #             p_file = json.load(f)
-        #         pls = p_file["playlists"]
+#         # # Printing query text + top 10 retrieved playlist titles
+#         # if idx % 100 == 0:
+#         #     print()
+#         #     print(f"Query TEXT: {query_text}")
+#         #     titles = []
+#         #     for ret_pid, ret_score in retrieved[:10]:
+#         #         pid_file = util.find_playlist_file(ret_pid, ppi)
+#         #         with open(pid_file) as f:
+#         #             p_file = json.load(f)
+#         #         pls = p_file["playlists"]
 
-        #         print(pls[ret_pid % 1000]["name"])
-        #     print()
-    # results = "query playlist": [(playlist_id, score), ...] sorted in descending order
-    return results
+#         #         print(pls[ret_pid % 1000]["name"])
+#         #     print()
+#     # results = "query playlist": [(playlist_id, score), ...] sorted in descending order
+#     return results
 
 # ============================================================================
 # MAIN EXECUTION
@@ -403,9 +405,18 @@ def main():
         for query_file in query_files:
             print(f"\nProcessing: {query_file.name}")
             queries = load_queries(query_file)
-            playlist_results, song_results, _ = process_queries(model, queries, Config.K_P)
+            playlist_results, song_results, final_results = process_queries(model, queries, Config.K_P)
+            stripped_results = {}
+            for pid, ranked_songs_list in final_results.items():
+                stripped_results[pid] = []
+                track_ids = [t[0] for t in ranked_songs_list]
+                for track_id in track_ids:
+                    formatted_track = {}
+                    formatted_track["track_uri"] = corpus[track_id]["track_uri"]
+                    formatted_track["artist_uri"] = corpus[track_id]["artist_uri"]
+                    stripped_results[pid].append(formatted_track)
             save_results(playlist_results, query_file.name, split_result_dir_playlist)
-            save_results(song_results, query_file.name, split_result_dir_songs)
+            save_results(stripped_results, query_file.name, split_result_dir_songs)
 
     print("\nAll queries processed successfully")
 
