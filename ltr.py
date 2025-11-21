@@ -23,7 +23,7 @@ class Config:
     RERANKER_VAL_DIR = WORKSPACE_DIR / "reranker_dataset" / "val"
     RERANKER_TEST_DIR = WORKSPACE_DIR / "reranker_dataset" / "test"
 
-    RESULTS_DIR = WORKSPACE_DIR / "results" / "ltr_baseline"
+    RESULTS_DIR = WORKSPACE_DIR / "results" / "ltr_baseline_2"
     TEST_RESULTS_DIR = RESULTS_DIR / "test"
     VAL_RESULTS_DIR = RESULTS_DIR / "val"
 
@@ -32,9 +32,6 @@ class Config:
     MODEL_PATH = Path("model") / "ltr_ranker.xgb"
 
     # Training parameters
-    ETA = 0.01
-    MAX_DEPTH = 6
-    NUM_BOOST_ROUND = 400
     DEVICE = "cuda"
 
     EVAL_ONLY = False
@@ -61,13 +58,6 @@ class Config:
         if args.model_path:
             cls.MODEL_PATH = args.model_path
 
-        # Training parameters
-        if args.eta:
-            cls.ETA = args.eta
-        if args.max_depth:
-            cls.MAX_DEPTH = args.max_depth
-        if args.num_boost_round:
-            cls.NUM_BOOST_ROUND = args.num_boost_round
         if args.device:
             cls.DEVICE = args.device
 
@@ -98,7 +88,9 @@ class PlaylistLTRDataset:
         )
 
         # Default: use all numeric fields except excluded ones
-        self.exclude_features = set(exclude_features or ["track_id", "label"])
+        self.exclude_features = set(
+            exclude_features or ["track_id", "label", "dl_score"]
+        )
         self.feature_keys = feature_keys
 
     def _load_file(self, file_path):
@@ -157,21 +149,45 @@ def train_model():
     print("Training")
     dataset = PlaylistLTRDataset(
         data_dir=Config.RERANKER_TRAIN_DIR,
-        exclude_features=["track_id", "label"],
+        exclude_features=["track_id", "label", "dl_score"],
     )
 
     dtrain = dataset.to_dmatrix()
 
     params = {
-        "objective": "rank:map",
+        "objective": "rank:ndcg",
         "eval_metric": "ndcg",
-        "eta": Config.ETA,
-        "max_depth": Config.MAX_DEPTH,
+        "eta": 0.01,
+        "max_depth": 6,
         "tree_method": "hist",
         "device": "cuda",
     }
 
-    model = xgb.train(params, dtrain, num_boost_round=Config.NUM_BOOST_ROUND)
+    # params = {
+    #     "objective": "rank:ndcg",
+    #     "eval_metric": ["ndcg@10"],
+    #     "eta": 0.01,  # Increased from 0.01 - faster convergence
+    #     "max_depth": 6,  # Reduced from 8 - prevent overfitting
+    #     "tree_method": "hist",
+    #     "device": "cuda",
+
+    #     # Optimize for top-10 precision
+    #     "lambdarank_num_pair_per_sample": 30,
+    #     "lambdarank_pair_method": "topk",
+    #     "ndcg_exp_gain": True,
+
+    #     # Regularization
+    #     "min_child_weight": 1,
+    #     "subsample": 0.8,  # Sample 80% of training data per tree
+    #     "colsample_bytree": 0.8,  # Sample 80% of features per tree
+    #     "lambda": 1.0,  # L2 regularization
+    #     "alpha": 0.0,  # L1 regularization
+
+    #     # Additional helpful parameters
+    #     "gamma": 0.1,  # Minimum loss reduction to make split
+    # }
+
+    model = xgb.train(params, dtrain, num_boost_round=400)
     model.save_model(Config.MODEL_PATH)
     return model
 
@@ -180,7 +196,7 @@ def train_model():
 # RESULTS PROCESSING
 # ============================================================================
 def process_queries(model, queries, top_k):
-    EXCLUDE = {"track_id", "label"}
+    EXCLUDE = {"track_id", "label", "dl_score"}
 
     results = {}
 
@@ -255,9 +271,6 @@ if __name__ == "__main__":
     parser.add_argument("--top-k", type=int, help="Number of top results to return")
 
     # Training parameters
-    parser.add_argument("--eta", type=float, help="Learning rate")
-    parser.add_argument("--max-depth", type=int, help="Maximum tree depth")
-    parser.add_argument("--num-boost-round", type=int, help="Number of boosting rounds")
     parser.add_argument(
         "--device", type=str, choices=["cpu", "cuda"], help="Device to use for training"
     )

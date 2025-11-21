@@ -17,6 +17,9 @@ if __name__ == "__main__":
     playlist_inverted_index["TOTAL_DOCS"] = 0
     playlist_inverted_index["DOC_LENGTHS"] = []
 
+    with open("dataset/playlist_metadata.json", "r") as f:
+        pid_metadata = json.load(f)
+
     for split in splits:
         split_path = dataset_path / split
         files = os.listdir(split_path)
@@ -31,15 +34,26 @@ if __name__ == "__main__":
                 data = orjson.loads(f.read())
 
                 for playlist in data["playlists"]:
-                    p_tokens = Counter(tokenize(f"{playlist['name']} {playlist.get('description', '')}"))
+                    p_tokens = Counter(
+                        tokenize(
+                            f"{playlist['name']} {playlist.get('description', '')}"
+                        )
+                    )
                     playlist_inverted_index["DOCID_MAP"].append(playlist["pid"])
-                    playlist_inverted_index["DOC_LENGTHS"].append(sum(p_tokens.values()))
+                    playlist_inverted_index["DOC_LENGTHS"].append(
+                        sum(p_tokens.values())
+                    )
                     playlist_inverted_index["TOTAL_DOCS"] += 1
 
                     for token, tf in p_tokens.items():
                         if token not in playlist_inverted_index:
                             playlist_inverted_index[token] = list()
                         playlist_inverted_index[token].append((playlist["pid"], tf))
+
+                    p_obj = pid_metadata.get(str(playlist["pid"]), {})
+                    if p_obj:
+                        genres = p_obj["label"].get("genres", [])
+                        features = p_obj["label"].get("features", [])
 
                     split_avg_len += len(playlist["tracks"])
                     for track in playlist["tracks"]:
@@ -55,7 +69,9 @@ if __name__ == "__main__":
                                     + track["album_name"]
                                 )
                             )
-                            tracks_index[track_id]["pf"] = 1
+
+                            tracks_index[track_id]["features"] = []
+                            tracks_index[track_id]["pf"] = 0
                             del tracks_index[track_id]["pos"]
 
                         if split == "train":
@@ -69,11 +85,17 @@ if __name__ == "__main__":
                             tracks_index[track_id]["extended_text"] += (
                                 " " + extended_text
                             )
+                            tracks_index[track_id]["features"] += genres + features
+                            
                             tracks_index[track_id]["pf"] += 1
 
         print(
-            f"Average number of playlists per file in {split} split: {split_avg_len / len(files) * 1000}"
+            f"Average number of playlists per file in {split} split: {split_avg_len / len(files) / 1000}"
         )
+
+    print("Make set of features")
+    for id in tracks_index.keys():
+        tracks_index[id]["features"] = tokenize(" ".join(tracks_index[id]["features"]))
 
     with open(dataset_path / "track_corpus.json", "w") as f:
         json.dump(tracks_index, f, indent=2)
@@ -103,5 +125,5 @@ if __name__ == "__main__":
     with open(dataset_path / "inverted_index.json", "w") as f:
         json.dump(inverted_index, f, indent=2)
     print(
-        f"Inverted index built and saved. {len(inverted_index)-2} unique tokens, {inverted_index['TOTAL_DOCS']} Documents indexed."
+        f"Inverted index built and saved. {len(inverted_index) - 2} unique tokens, {inverted_index['TOTAL_DOCS']} Documents indexed."
     )

@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import orjson
 import evaluation
+import tqdm
 
 
 # ============================================================================
@@ -67,15 +68,21 @@ def evaluate_split(baseline_name, split, workspace_dir):
     # Accumulate metrics dynamically
     metrics = {}
     metric_keys = None
+
+    with open("dataset/playlist_metadata.json") as f:
+        playlist_metadata = orjson.loads(f.read())
+    
+    with open("dataset/track_corpus.json") as f:
+        track_corpus = orjson.loads(f.read())
     
     print(f"Evaluating {split} split ({len(test_files)} files)...")
-    for test_file, result_file in zip(test_file_paths, result_file_paths):
+    for test_file, result_file in tqdm.tqdm(zip(test_file_paths, result_file_paths)):
         with open(test_file, "rb") as f:
             test_data = orjson.loads(f.read())
         with open(result_file, "rb") as f:
             result_data = orjson.loads(f.read())
         
-        measures = evaluation.evaluation_report(result_data, test_data)
+        measures = evaluation.evaluation_report(result_data, test_data, playlist_metadata, track_corpus)
         
         # Initialize metrics dict on first file
         if metric_keys is None:

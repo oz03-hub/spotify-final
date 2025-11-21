@@ -1,5 +1,5 @@
 import math
-from util import extract_id
+from util import extract_id, tokenize
 
 def _parse_qrel(qrel):
     qrel_tracks = set()
@@ -171,36 +171,129 @@ def ndcg_at_k(submission: dict[list], qrel: dict[list], k: int) -> dict[float]:
     ndcgs["mean"] = sum(ndcgs.values()) / len(ndcgs)
     return ndcgs
 
-def evaluation_report(submission: dict[list], qrel_obj) -> dict[float]:
-    """Generate P@3, P@5, P@10, P@R, RR report
+def feature_overlap_at_k(
+    submission: dict[list],
+    qrel: dict[list],
+    playlist_metadata: dict,
+    track_corpus: dict,
+    k: int,
+) -> dict[float]:
+    """Computes average feature overlap between playlist and retrieved tracks at K
+    
+    This measures how well the retrieved tracks match the playlist's genre/feature context.
+    Higher scores indicate better contextual matching.
+
+    Args:
+        submission (dict[list]): Submission JSON, pid -> tracks
+        qrel (dict[list]): Qrels JSON (used only for getting PIDs)
+        playlist_metadata (dict): Playlist metadata with features/genres
+        track_corpus (dict): Track corpus with accumulated features
+        k (int): Number of top tracks to evaluate
+
+    Returns:
+        dict[float]: pid -> average feature overlap score
+    """
+
+    def _feature_overlap_for_pid(sub: list[dict], pid: str):
+        # Get playlist features
+        pid_str = str(pid)
+        labels = playlist_metadata.get(pid_str, {}).get("label", {})
+        genres = labels.get("genres", [])
+        playlist_features = labels.get("features", [])
+        
+        # Normalize to lowercase for comparison
+        all_playlist_features = set(tokenize(" ".join(genres + playlist_features)))
+
+        # If playlist has no features, return 0
+        if not all_playlist_features:
+            return 0.0
+        
+        # Compute overlap for each retrieved track
+        overlaps = []
+        for track in sub[:k]:
+            track_id = extract_id(track["track_uri"])
+            
+            # Get track features from corpus
+            if track_id in track_corpus:
+                track_features_set = set(track_corpus[track_id].get("features", []))
+                
+                # Compute Jaccard similarity (intersection / union)
+                if track_features_set:
+                    intersection = all_playlist_features.intersection(track_features_set)
+                    # Use intersection / playlist_features to measure how well track matches playlist
+                    overlap = len(intersection) / len(all_playlist_features)
+                else:
+                    overlap = 0.0
+            else:
+                overlap = 0.0
+            
+            overlaps.append(overlap)
+        
+        # Return average overlap across top-k tracks
+        return sum(overlaps) / len(overlaps) if overlaps else 0.0
+
+    feature_overlaps = {}
+    for pid in submission:
+        feature_overlaps[pid] = _feature_overlap_for_pid(submission[pid], pid)
+
+    feature_overlaps["mean"] = sum(feature_overlaps.values()) / len(feature_overlaps) if feature_overlaps else 0.0
+    return feature_overlaps
+
+
+def evaluation_report(
+    submission: dict[list],
+    qrel_obj,
+    playlist_metadata,
+    track_corpus,
+) -> dict[float]:
+    """Generate comprehensive evaluation report including feature overlap metrics
 
     Args:
         submission (dict[list]): submission JSON, pid -> Tracks
-        qrel (dict[list]): qrels JSON
+        qrel_obj: qrels JSON object with playlists
+        playlist_metadata_path (str): Path to playlist metadata JSON file
+        track_corpus_path (str): Path to track corpus JSON file
 
     Returns:
-        dict[float]: evaluation report
+        dict[float]: evaluation report with all metrics
     """
 
     qrel = {}
     for playlist in qrel_obj["playlists"]:
         qrel[str(playlist["pid"])] = playlist["tracks"]
 
+    # Load metadata and corpus for feature overlap computation
+    try:        
+        # Compute feature overlap metrics
+        feature_overlap_10 = feature_overlap_at_k(submission, qrel, playlist_metadata, track_corpus, 10)
+        # feature_overlap_100 = feature_overlap_at_k(submission, qrel, playlist_metadata, track_corpus, 100)
+    except FileNotFoundError as e:
+        print(f"Warning: Could not load metadata/corpus files for feature overlap: {e}")
+        feature_overlap_10 = {"mean": 0.0}
 
+    # Standard metrics
     p5 = precision_at_k(submission, qrel, 5)
     p10 = precision_at_k(submission, qrel, 10)
-    # p100 = precision_at_k(submission, qrel, 100)
+    p100 = precision_at_k(submission, qrel, 100)
     pr = r_precision(submission, qrel)
 
     rr = reciprocal_rank(submission, qrel)
 
     ndcg_at_5 = ndcg_at_k(submission, qrel, 5)
     ndcg_at_10 = ndcg_at_k(submission, qrel, 10)
-    # ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
+    ndcg_at_100 = ndcg_at_k(submission, qrel, 100)
 
-    r500 = recall_at_k(submission, qrel, 500)
-    r1000 = recall_at_k(submission, qrel, 1000)
-
-    report = {"P@5": p5, "P@10": p10, "P@R": pr, "RR": rr, "NDCG@5": ndcg_at_5, "NDCG@10": ndcg_at_10, "R@500": r500, "R@1000": r1000}
+    report = {
+        "P@5": p5,
+        "P@10": p10,
+        "P@100": p100,
+        "P@R": pr,
+        "RR": rr,
+        "NDCG@5": ndcg_at_5,
+        "NDCG@10": ndcg_at_10,
+        "NDCG@100": ndcg_at_100,
+        "FeatureOverlap@10": feature_overlap_10,
+        # "FeatureOverlap@100": feature_overlap_100
+    }
 
     return report
