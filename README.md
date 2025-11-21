@@ -11,6 +11,8 @@ You need a fresh python environment.
 2. With the environment activated run `python build_inverted_index.py` to verify it is working.
 
 # Running the baselines
+**For all baselines**, we recommend a CPU with multiple cores, and around 32GB of memory. Unity research cluster is more than capable of running all experiments, personal laptops might be slightly slower and warm. For fine-tuning the dense retriever, you should use a GPU, we provide slurm scripts to tune on Unity.
+
 **For Unity users**, the SLURM files are located in `scripts`, you can invoke each by `sbatch file run_*.sh`
 
 Each `*_baseline.py` will output it's ranked results into `dataset/results/*_baseline/`.
@@ -79,3 +81,12 @@ python view_measures.py --baseline lmir_baseline
 
 To change the baseline viewed, just change the argument for the approach or baseline you ran.
 
+## Inference
+
+You should run the Hybrid Retriever Approach to train and build the index first.
+
+You should use a GPU, best way is to run an interactive Unity job with 1 GPU, anything with >16GB should be fine.
+
+```
+python inference.py
+```

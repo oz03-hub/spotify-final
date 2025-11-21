@@ -8,11 +8,10 @@
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
 #SBATCH --nodes=1
-#SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=oyilmazel@umass.edu
 
 module load conda/latest
 
 conda activate retrieval_env
 
+# CHANGE TO YOUR OWN PATH
 python fine_tune.py  --output_dir /scratch4/workspace/oyilmazel_umass_edu-mpd/transformer_finetuned/ 

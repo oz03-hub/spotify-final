@@ -25,21 +25,23 @@ class Config:
     CORPUS_FILE = WORKSPACE_DIR / "track_corpus.json"
     TRAIN_QUERIES_DIR = WORKSPACE_DIR / "train"
     INVERTED_INDEX = WORKSPACE_DIR / "inverted_index.json"
-    RESULTS_DIR = WORKSPACE_DIR / "results" / "hybrid_baseline"
+    RESULTS_DIR = WORKSPACE_DIR / "results" / "hybrid_baseline_zeroshot"
     MODEL_DIR = Path("model")
 
     METADATA = WORKSPACE_DIR / "playlist_metadata.json"
 
     # Model parameters
+    # COMMENT OUT IF YOU WANT 0-SHOT
     DENSE_MODEL = "all-MiniLM-L6-v2"  # Fast and effective sentence transformer
+    # DENSE_MODEL = "/scratch4/workspace/oyilmazel_umass_edu-mpd/transformer_finetuned/best" # CHANGE THIS TO YOUR FINE-TUNED LOCATION
     TOP_K = 100
     CANDIDATE_K = 1000  # Retrieve more candidates before re-ranking
 
     # Fusion weights
-    DENSE_WEIGHT = 0.25
-    LMIR_WEIGHT = 0.4
-    COOCCUR_WEIGHT = 0.25
-    GF_WEIGHT = 0.1
+    DENSE_WEIGHT = 1.0
+    LMIR_WEIGHT = 0.0
+    COOCCUR_WEIGHT = 0.0
+    GF_WEIGHT = 0.0
 
     MU = 2000
 
@@ -669,7 +671,7 @@ class HybridRetriever:
         """Save all retrievers."""
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        self.cooccur_retriever.save(save_dir / "gf")
+        self.gf_retriever.save(save_dir / "gf")
 
         self.dense_retriever.save(save_dir / "dense")
         self.cooccur_retriever.save(save_dir / "cooccur")

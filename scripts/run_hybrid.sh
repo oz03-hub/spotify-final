@@ -15,4 +15,5 @@ module load conda/latest
 
 conda activate retrieval_env
 
+# CHANGE TO YOUR FINETUNED PATH
 python hybrid_ret.py --retrain --model_dir /scratch4/workspace/oyilmazel_umass_edu-mpd/models/ 

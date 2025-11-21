@@ -69,8 +69,6 @@ class Config:
             cls.MU = args.mu
         if args.top_k:
             cls.TOP_K = args.top_k
-        if args.ce_batch_size:
-            cls.CROSS_ENCODER_BATCH_SIZE = args.ce_batch_size
         if args.min_non_relevant:
             cls.MIN_NON_RELEVANT = args.min_non_relevant
 
@@ -420,9 +418,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--top_k", type=int, help="Number of top results to return per query"
-    )
-    parser.add_argument(
-        "--ce_batch_size", type=int, help="Batch size for cross-encoder processing"
     )
     parser.add_argument(
         "--min_non_relevant",
