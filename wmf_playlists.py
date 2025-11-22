@@ -85,6 +85,44 @@ def save_playlists(model: WMFModel, queries, top_k):
         results[pid] = retrieved
     return results
 
+def save_songs_and_p_scores(playlist_results: dict):
+    results = {}
+    with open(Config.NARROW_DIR) as f:
+        p_file = json.load(f)
+
+    for pid, similar_tuples in tqdm(playlist_results.items(), desc="Sampling Songs"):
+        sampled_songs = []
+        for similar_pid, similarity_score in similar_tuples:
+            track_uris = p_file[str(similar_pid)]
+            # Randomly sample 2 songs (or fewer if playlist has less than 2)
+            sample_size = min(Config.K_S, len(track_uris))
+            sampled_tracks = random.sample(track_uris, sample_size) if sample_size > 0 else []
+            for track in sampled_tracks:
+                sampled_songs.append((track, similarity_score))
+            
+        if (len(sampled_songs)) == 0:
+            # for track in sampled_tracks:
+            #     print(track)
+            # print("SKIP")
+            # print("PID", pid)
+            continue
+        
+        scores = [i[1] for i in sampled_songs]
+        softmax_scores = softmax(scores)
+
+        for i in range(len(sampled_songs)):
+            updated_tuple = (sampled_songs[i][0], softmax_scores[i])
+            sampled_songs[i] = updated_tuple
+
+        results[pid] = sampled_songs
+
+    return results
+
+def softmax(x):
+    """Compute softmax values for array x."""
+    exp_x = np.exp(x - np.max(x))  # Subtract max for numerical stability
+    return exp_x / exp_x.sum()
+
 def save_songs(playlist_results: dict):
     results = {}
     with open(Config.NARROW_DIR) as f:
@@ -98,7 +136,7 @@ def save_songs(playlist_results: dict):
             # Randomly sample 2 songs (or fewer if playlist has less than 2)
             sample_size = min(Config.K_S, len(track_uris))
             sampled_tracks = random.sample(track_uris, sample_size) if sample_size > 0 else []
-            
+
             sampled_songs.extend(sampled_tracks)
         
         results[pid] = sampled_songs
@@ -187,6 +225,48 @@ def recommend_similar_tracks(self, track_id=None, embedding=None, top_k=100):
     
     return results[:top_k]
 
+def get_weighted_track_embedding(model, pid, tracks_and_p_scores):
+    """
+    Get the average embedding for a list of track URIs.
+    """
+    if model.model is None:
+        raise ValueError("Model not trained.")
+    
+    if not tracks_and_p_scores:
+        print("WARNING: No track URIs provided")
+        return None
+    
+    # Build URI lookup if it doesn't exist
+    if not hasattr(model, 'track_uri_to_id'):
+        print("Building track_uri_to_id lookup...")
+        model.track_uri_to_id = {
+            track_data['track_uri']: track_id 
+            for track_id, track_data in model.corpus.items()
+        }
+    
+    valid_embeddings = []
+    scores = []
+    
+    for tuple in tracks_and_p_scores[pid]:
+        track_uri, playlist_score = tuple
+        track_id = model.track_uri_to_id.get(track_uri)
+        scores.append(playlist_score)
+        
+        if track_id and track_id in model.track_id_to_idx:
+            track_idx = model.track_id_to_idx[track_id]
+            embedding = model.model.user_factors[track_idx]
+            valid_embeddings.append(embedding)
+    
+    # print(f"Input URIs: {len(track_uris)}, Valid embeddings: {len(valid_embeddings)}")
+    
+    if not valid_embeddings:
+        print(f"WARNING: No valid embeddings found for URIs: {tracks_and_p_scores[:3]}...")
+        return None
+    
+    # Average the embeddings
+    avg_embedding = np.average(valid_embeddings, weights=scores, axis=0)
+    return avg_embedding
+
 def get_average_track_embedding(model, track_uris):
     """
     Get the average embedding for a list of track URIs.
@@ -231,14 +311,15 @@ def process_queries(model: WMFModel, queries, top_kp):
     """Process all queries and save results."""
     playlist_results = save_playlists(model, queries, top_kp)
     song_results = save_songs(playlist_results)
-
-    print("TOP KP", top_kp)
+    songs_and_p_results = save_songs_and_p_scores(playlist_results)
 
     final_results = {}
+    final_weighted_results = {}
     idx = 0
     
     for pid, top_songs_uris in tqdm(song_results.items(), desc="Processing Song Embeddings"):
         if not top_songs_uris:
+            # print("PRIOR PID", pid)
             continue
 
         # DEBUG: Print the input songs for this playlist
@@ -252,6 +333,7 @@ def process_queries(model: WMFModel, queries, top_kp):
             # print(f"Input songs (first 5): {top_songs_uris[:5]}")
         
         avg_song_embedding = get_average_track_embedding(model, top_songs_uris)
+        weighted_avg_song_embedding = get_weighted_track_embedding(model, pid, songs_and_p_results)
         
         if avg_song_embedding is None:
             print(f"Skipping playlist {pid} - no valid embeddings")
@@ -266,9 +348,15 @@ def process_queries(model: WMFModel, queries, top_kp):
             embedding=avg_song_embedding, 
             top_k=100
         )
+        weighted_track_recommendations = recommend_similar_tracks(
+            model, 
+            embedding=weighted_avg_song_embedding, 
+            top_k=100
+        )
         
         final_results[pid] = track_recommendations
-        
+        final_weighted_results[pid] = weighted_track_recommendations
+
         # Debug printing
         if idx % 100 == 0:
             print(f"Top 20 recommendations:")
@@ -280,7 +368,7 @@ def process_queries(model: WMFModel, queries, top_kp):
         
         idx += 1
     
-    return playlist_results, song_results, final_results
+    return playlist_results, song_results, final_results, final_weighted_results
 
 # def debug_process_queries(model: WMFModel, queries, top_k):
 #     """Process all queries and print results (K_S songs randomly sampled for each top K_P playlists)."""
@@ -394,8 +482,11 @@ def main():
         split_result_dir_playlist = Config.RESULTS_DIR / "playlist" / split
         split_result_dir_playlist.mkdir(parents=True, exist_ok=True)
 
-        split_result_dir_songs = Config.RESULTS_DIR / "songs" / split
-        split_result_dir_songs.mkdir(parents=True, exist_ok=True)
+        split_result_dir_unweighted = Config.RESULTS_DIR / "unweighted" / split
+        split_result_dir_unweighted.mkdir(parents=True, exist_ok=True)
+
+        split_result_dir_weighted = Config.RESULTS_DIR / "wmf_weighted" / split
+        split_result_dir_weighted.mkdir(parents=True, exist_ok=True)
 
         query_files = get_query_files(split_dir)
         print(f"\n{'=' * 70}")
@@ -405,8 +496,10 @@ def main():
         for query_file in query_files:
             print(f"\nProcessing: {query_file.name}")
             queries = load_queries(query_file)
-            playlist_results, song_results, final_results = process_queries(model, queries, Config.K_P)
+            playlist_results, song_results, final_results, final_weighted_results = process_queries(model, queries, Config.K_P)
             stripped_results = {}
+            stripped_weighted_results = {}
+
             for pid, ranked_songs_list in final_results.items():
                 stripped_results[pid] = []
                 track_ids = [t[0] for t in ranked_songs_list]
@@ -415,8 +508,20 @@ def main():
                     formatted_track["track_uri"] = corpus[track_id]["track_uri"]
                     formatted_track["artist_uri"] = corpus[track_id]["artist_uri"]
                     stripped_results[pid].append(formatted_track)
+            
+            for pid, ranked_songs_list in final_weighted_results.items():
+                stripped_weighted_results[pid] = []
+                track_ids = [t[0] for t in ranked_songs_list]
+                for track_id in track_ids:
+                    formatted_track = {}
+                    formatted_track["track_uri"] = corpus[track_id]["track_uri"]
+                    formatted_track["artist_uri"] = corpus[track_id]["artist_uri"]
+                    stripped_weighted_results[pid].append(formatted_track)
+
+            #Saves query PID + Similar Playlists and Similarity Score
             save_results(playlist_results, query_file.name, split_result_dir_playlist)
-            save_results(stripped_results, query_file.name, split_result_dir_songs)
+            save_results(stripped_results, query_file.name, split_result_dir_unweighted)
+            save_results(stripped_weighted_results, query_file.name, split_result_dir_weighted)
 
     print("\nAll queries processed successfully")
 
