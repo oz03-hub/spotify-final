@@ -1,0 +1,12 @@
+ipykernel
+tqdm
+pandas
+numpy
+orjson
+implicit
+nltk
+scipy
+scikit-learn
+sentence-transformers
+
+xgboost
