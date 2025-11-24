@@ -36,6 +36,7 @@ class Config:
     # Sampling parameters
     K_S = 2 # Number of songs sampled per top K_P playlists
     K_P = 10 # Top K_P most similar playlists retrieved
+    K_FINAL = 100 # Number of songs returned in the final playlists
 
     # Training options
     RETRAIN = False  # Whether to retrain even if model exists
@@ -72,20 +73,21 @@ class Config:
         cls.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         cls.MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-with open("dataset/playlist_path_index.json") as f:
-    ppi = json.load(f)
-
-def save_playlists(model: WMFModel, queries, top_k):
+def get_top_kp_playlists(model: WMFModel, queries):
+    '''Given seed query playlist title names, retrieve the TOP_KP similar playlists'''
     results = {}
     for idx, playlist in enumerate(tqdm(queries, desc="Retrieving")):
         query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}"
         pid = playlist.get("pid")
         # retrieved = [(playlist_id, score), ...]
-        retrieved = model.retrieve_playlists(query_text, top_k=top_k)
+        retrieved = model.retrieve_playlists(query_text, top_k=Config.K_P)
         results[pid] = retrieved
     return results
 
-def save_songs_and_p_scores(playlist_results: dict):
+def get_songs_and_weights(playlist_results: dict):
+    '''Given each seed query playlist title and its retrieved similar playlists and respective similarity scores, 
+        randomly sample K_S # of songs per playlist and assign a weight based on the similarity score of the playlist it came from.
+        Returns a dict, where the key is the seed playlist pid and the value is a list of tuples (track_uri, weight)'''
     results = {}
     with open(Config.NARROW_DIR) as f:
         p_file = json.load(f)
@@ -101,10 +103,6 @@ def save_songs_and_p_scores(playlist_results: dict):
                 sampled_songs.append((track, similarity_score))
             
         if (len(sampled_songs)) == 0:
-            # for track in sampled_tracks:
-            #     print(track)
-            # print("SKIP")
-            # print("PID", pid)
             continue
         
         scores = [i[1] for i in sampled_songs]
@@ -123,7 +121,9 @@ def softmax(x):
     exp_x = np.exp(x - np.max(x))  # Subtract max for numerical stability
     return exp_x / exp_x.sum()
 
-def save_songs(playlist_results: dict):
+def get_songs(playlist_results: dict):
+    '''Given the seed query playlist title and its retrieved similar playlists and respective similarity scores.
+    Returns a dict, where the key is the seed playlist pid and the value is a list of track_uri's'''
     results = {}
     with open(Config.NARROW_DIR) as f:
         p_file = json.load(f)
@@ -143,87 +143,40 @@ def save_songs(playlist_results: dict):
 
     return results
 
-# def process_queries(model: WMFModel, queries, top_k):
-#     """Process all queries and save results."""
-#     # Runs and saves the top K_P most similar playlists for each query
-#     playlist_results = save_playlists(model, queries, top_k)
-#     # Runs and saves the top K_S randomly sampled from the top K_P playlists for each query.
-#     song_results = save_songs(playlist_results)
-
-#     final_results = {}
-#     idx = 0
-#     for pid, top_songs_uris in tqdm(song_results.items(), desc="Processing Song Embeddings"):
-#         if not top_songs_uris:
-#             continue
-
-#         avg_song_embedding = get_average_track_embedding(model, top_songs_uris)
-#         track_recs = recommend_similar_tracks(model, embedding=avg_song_embedding)
-#         final_results[pid] = track_recs
-        
-#         # results is a list of (track_id, score) tuples
-#         for pid, songs in song_results.items():
-#             # # Printing query text + top 10 retrieved playlist titles
-#             if idx % 100 == 0:
-#                 pid_file = util.find_playlist_file(pid, ppi)
-#                 with open(pid_file) as f:
-#                     p_file = json.load(f)
-#                 pls = p_file["playlists"]
-#                 print()
-#                 print("PLAYLIST TITLE", pls[pid % 1000]["name"])
-#                 for track_id, track_score in track_recs:
-#                     track_data = model.corpus[track_id]
-#                     track_name = track_data.get("track_name", "")
-#                     print(track_name)
-#                 print("NUM TRACKS ", len(track_recs))
-#                 print()
-#             idx += 1
-        
-        
-    
-#     return playlist_results, song_results
-
-def recommend_similar_tracks(self, track_id=None, embedding=None, top_k=100):
+def recommend_similar_tracks(self, embedding=None):
     """
-    Find similar tracks based on latent embeddings.
+    Find similar tracks based on a latent track embedding.
     
     Args:
-        track_id: Single track ID to find similar tracks for (optional)
-        embedding: Pre-computed embedding vector (optional)
-        top_k: Number of results to return
+        embedding: Pre-computed embedding vector
     
     Returns:
-        List of (track_id, score) tuples
+        List of K_FINAL # of (track_id, score) tuples
     """
     if self.model is None:
         raise ValueError("Model not trained.")
     
-    # Get query embedding from either track_id or provided embedding
+    # Ensures embedding is passed in, else raise a ValueError
     if embedding is not None:
         query_embedding = embedding
         exclude_idx = None
-    elif track_id is not None:
-        if track_id not in self.track_id_to_idx:
-            return []
-        exclude_idx = self.track_id_to_idx[track_id]
-        query_embedding = self.model.user_factors[exclude_idx]
     else:
-        raise ValueError("Must provide either track_id or embedding")
+        raise ValueError("Must provide an embedding")
     
     # Compare with all track embeddings
     track_embeddings = self.model.user_factors[:self.num_tracks]
     similarities = track_embeddings.dot(query_embedding)
     
-    # Get top-k (excluding the query track if applicable)
-    top_k_search = min(top_k + 1 if exclude_idx is not None else top_k, len(similarities))
+    # Get top-k
+    top_k_search = min(Config.K_FINAL, len(similarities))
     top_indices = np.argpartition(-similarities, top_k_search)[:top_k_search]
     top_indices = top_indices[np.argsort(-similarities[top_indices])]
     
     results = []
     for idx in top_indices:
-        if exclude_idx is None or idx != exclude_idx:
-            results.append((self.track_ids[idx], float(similarities[idx])))
+        results.append((self.track_ids[idx], float(similarities[idx])))
     
-    return results[:top_k]
+    return results[:Config.K_FINAL]
 
 def get_weighted_track_embedding(model, pid, tracks_and_p_scores):
     """
@@ -256,8 +209,6 @@ def get_weighted_track_embedding(model, pid, tracks_and_p_scores):
             track_idx = model.track_id_to_idx[track_id]
             embedding = model.model.user_factors[track_idx]
             valid_embeddings.append(embedding)
-    
-    # print(f"Input URIs: {len(track_uris)}, Valid embeddings: {len(valid_embeddings)}")
     
     if not valid_embeddings:
         print(f"WARNING: No valid embeddings found for URIs: {tracks_and_p_scores[:3]}...")
@@ -296,8 +247,6 @@ def get_average_track_embedding(model, track_uris):
             embedding = model.model.user_factors[track_idx]
             valid_embeddings.append(embedding)
     
-    # print(f"Input URIs: {len(track_uris)}, Valid embeddings: {len(valid_embeddings)}")
-    
     if not valid_embeddings:
         print(f"WARNING: No valid embeddings found for URIs: {track_uris[:3]}...")
         return None
@@ -307,117 +256,43 @@ def get_average_track_embedding(model, track_uris):
     return avg_embedding
 
 
-def process_queries(model: WMFModel, queries, top_kp):
-    """Process all queries and save results."""
-    playlist_results = save_playlists(model, queries, top_kp)
-    song_results = save_songs(playlist_results)
-    songs_and_p_results = save_songs_and_p_scores(playlist_results)
+def process_queries(model: WMFModel, queries):
+    """Process all queries and save results. Saves results in three different subdirectories. 
+        playlist saves the top kp similar playlists to the input playlist name
+        unweighted saves the top k_final songs given the input playlist name when song embeddings are averaged
+        wmf_weighted saves the top k_final songs given the input playlist name when song embeddings are averaged with weights"""
 
-    final_results = {}
+    playlist_results = get_top_kp_playlists(model, queries)
+    song_results = get_songs(playlist_results)
+    songs_and_weights_results = get_songs_and_weights(playlist_results)
+
+    final_unweighted_results = {}
     final_weighted_results = {}
-    idx = 0
     
     for pid, top_songs_uris in tqdm(song_results.items(), desc="Processing Song Embeddings"):
         if not top_songs_uris:
-            # print("PRIOR PID", pid)
             continue
-
-        # DEBUG: Print the input songs for this playlist
-        if idx % 100 == 0:
-            pid_file = util.find_playlist_file(pid, ppi)
-            with open(pid_file) as f:
-                p_file = json.load(f)
-            pls = p_file["playlists"]
-            print()
-            print("PLAYLIST TITLE", pls[pid % 1000]["name"])
-            # print(f"Input songs (first 5): {top_songs_uris[:5]}")
         
         avg_song_embedding = get_average_track_embedding(model, top_songs_uris)
-        weighted_avg_song_embedding = get_weighted_track_embedding(model, pid, songs_and_p_results)
+        weighted_avg_song_embedding = get_weighted_track_embedding(model, pid, songs_and_weights_results)
         
         if avg_song_embedding is None:
             print(f"Skipping playlist {pid} - no valid embeddings")
             continue
         
-        # DEBUG: Check if embedding is different
-        if idx % 100 == 0:
-            print(f"Embedding hash: {hash(avg_song_embedding.tobytes())}")
-        
         track_recommendations = recommend_similar_tracks(
             model, 
-            embedding=avg_song_embedding, 
-            top_k=100
+            embedding=avg_song_embedding
         )
         weighted_track_recommendations = recommend_similar_tracks(
             model, 
-            embedding=weighted_avg_song_embedding, 
-            top_k=100
+            embedding=weighted_avg_song_embedding
         )
         
-        final_results[pid] = track_recommendations
+        final_unweighted_results[pid] = track_recommendations
         final_weighted_results[pid] = weighted_track_recommendations
-
-        # Debug printing
-        if idx % 100 == 0:
-            print(f"Top 20 recommendations:")
-            for track_id, track_score in track_recommendations[:20]:
-                track_data = model.corpus[track_id]
-                track_name = track_data.get("track_name", "")
-                print(f"  {track_name} (score: {track_score:.4f})")
-            print()
-        
-        idx += 1
     
-    return playlist_results, song_results, final_results, final_weighted_results
-
-# def debug_process_queries(model: WMFModel, queries, top_k):
-#     """Process all queries and print results (K_S songs randomly sampled for each top K_P playlists)."""
-#     results = {}
-#     for idx, playlist in enumerate(tqdm(queries, desc="Retrieving")):
-#         query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}"
-#         pid = playlist.get("pid")
-#         # retrieved = [(playlist_id, score), ...]
-#         retrieved = model.retrieve_playlists(query_text, top_k=top_k)
-#         # results[pid] = retrieved
-
-#         # Randomly sample 2 songs from each retrieved playlist
-#         sampled_results = []
-#         sampled_songs = []
-#         for ret_pid, ret_score in retrieved:
-#             pid_file = util.find_playlist_file(ret_pid, ppi)
-#             with open(pid_file) as f:
-#                 p_file = json.load(f)
-#             pls = p_file["playlists"]
-            
-#             # Get the playlist tracks
-#             playlist_data = pls[ret_pid % 1000]
-#             track_names = []
-#             track_data = playlist_data.get("tracks", [])
-#             for track in track_data:
-#                 track_names.append(track["track_name"])
-            
-#             # Randomly sample 2 songs (or fewer if playlist has less than 2)
-#             sample_size = min(Config.K_S, len(track_names))
-#             sampled_tracks = random.sample(track_names, sample_size) if sample_size > 0 else []
-            
-#             sampled_songs.extend(sampled_tracks)
-#         results[pid] = sampled_results
-
-#         # # Printing query text + top 10 retrieved playlist titles
-#         # if idx % 100 == 0:
-#         #     print()
-#         #     print(f"Query TEXT: {query_text}")
-#         #     titles = []
-#         #     for ret_pid, ret_score in retrieved[:10]:
-#         #         pid_file = util.find_playlist_file(ret_pid, ppi)
-#         #         with open(pid_file) as f:
-#         #             p_file = json.load(f)
-#         #         pls = p_file["playlists"]
-
-#         #         print(pls[ret_pid % 1000]["name"])
-#         #     print()
-#     # results = "query playlist": [(playlist_id, score), ...] sorted in descending order
-#     return results
+    return playlist_results, song_results, final_unweighted_results, final_weighted_results
 
 # ============================================================================
 # MAIN EXECUTION
@@ -482,7 +357,7 @@ def main():
         split_result_dir_playlist = Config.RESULTS_DIR / "playlist" / split
         split_result_dir_playlist.mkdir(parents=True, exist_ok=True)
 
-        split_result_dir_unweighted = Config.RESULTS_DIR / "unweighted" / split
+        split_result_dir_unweighted = Config.RESULTS_DIR / "wmf_unweighted" / split
         split_result_dir_unweighted.mkdir(parents=True, exist_ok=True)
 
         split_result_dir_weighted = Config.RESULTS_DIR / "wmf_weighted" / split
@@ -496,7 +371,7 @@ def main():
         for query_file in query_files:
             print(f"\nProcessing: {query_file.name}")
             queries = load_queries(query_file)
-            playlist_results, song_results, final_results, final_weighted_results = process_queries(model, queries, Config.K_P)
+            playlist_results, song_results, final_results, final_weighted_results = process_queries(model, queries)
             stripped_results = {}
             stripped_weighted_results = {}
 
