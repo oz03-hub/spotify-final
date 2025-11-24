@@ -216,12 +216,12 @@ class SVDModel:
         score = float(track_emb.dot(query_emb.T).ravel())
         return score
 
-    def score_query_tracks(self, query_text, track_ids):
+    def score_query_tracks(self, query_tokens, track_ids):
         """
         Compute scores for multiple tracks given a query using vectorized ops.
 
         Args:
-            query_text: Query string
+            query_tokens: Query tokenized
             track_ids: Iterable of track IDs to score
 
         Returns:
@@ -233,7 +233,7 @@ class SVDModel:
         if not track_ids:
             return []
 
-        tf_counter = Counter(tokenize(query_text))
+        tf_counter = Counter(query_tokens)
         cols = []
         data = []
         for word, count in tf_counter.items():

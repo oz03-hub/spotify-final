@@ -20,4 +20,4 @@ conda activate lenv
 
 export OPENBLAS_NUM_THREADS=1
 
-python make_dataset.py
+python fast_rerank_dataset.py

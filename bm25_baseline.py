@@ -95,9 +95,7 @@ class BM25Retriever:
             data = json.load(f)
         self.load_inverted_index_from_object(data)
 
-    def score_query_doc(self, query_text, doc_text):
-        query_tokens = tokenize(query_text)
-        doc_tokens = tokenize(doc_text)
+    def score_query_doc(self, query_tokens, doc_tokens):
         score = 0.0
         doc_len = len(doc_tokens)
         doc_tokens = Counter(doc_tokens)

@@ -156,6 +156,7 @@ def main():
     corpus = load_corpus(Config.CORPUS_FILE)
 
     for query_dir, result_dir in [
+        # (Path("dataset/train/"), Path("dataset/results/lmir_baseline/train/"))
         (Config.TEST_QUERIES_DIR, Config.TEST_RESULTS_DIR),
         (Config.VAL_QUERIES_DIR, Config.VAL_RESULTS_DIR),
     ]:

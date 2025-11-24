@@ -326,12 +326,12 @@ class WMFModel:
 
         return float(track_embedding.dot(query_emb))
 
-    def score_query_tracks(self, query_text, track_ids):
+    def score_query_tracks(self, query_tokens, track_ids):
         """
         Compute scores for multiple tracks given a query in a single pass.
 
         Args:
-            query_text: Query string
+            query_tokens: Query tokenized
             track_ids: Iterable of track IDs to score
 
         Returns:
@@ -343,7 +343,7 @@ class WMFModel:
         if not track_ids:
             return []
 
-        tf_counter = Counter(tokenize(query_text))
+        tf_counter = Counter(query_tokens)
         cols = []
         data = []
         for word, count in tf_counter.items():
