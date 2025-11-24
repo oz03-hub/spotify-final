@@ -25,23 +25,23 @@ class Config:
     CORPUS_FILE = WORKSPACE_DIR / "track_corpus.json"
     TRAIN_QUERIES_DIR = WORKSPACE_DIR / "train"
     INVERTED_INDEX = WORKSPACE_DIR / "inverted_index.json"
-    RESULTS_DIR = WORKSPACE_DIR / "results" / "hybrid_baseline_zeroshot"
+    RESULTS_DIR = WORKSPACE_DIR / "results" / "hybrid_baseline_tuned"
     MODEL_DIR = Path("model")
 
     METADATA = WORKSPACE_DIR / "playlist_metadata.json"
 
     # Model parameters
     # COMMENT OUT IF YOU WANT 0-SHOT
-    DENSE_MODEL = "all-MiniLM-L6-v2"  # Fast and effective sentence transformer
-    # DENSE_MODEL = "/scratch4/workspace/oyilmazel_umass_edu-mpd/transformer_finetuned/best" # CHANGE THIS TO YOUR FINE-TUNED LOCATION
+    # DENSE_MODEL = "all-MiniLM-L6-v2"  # Fast and effective sentence transformer
+    DENSE_MODEL = "/scratch4/workspace/oyilmazel_umass_edu-mpd/transformer_finetuned/best"  # CHANGE THIS TO YOUR FINE-TUNED LOCATION
     TOP_K = 100
     CANDIDATE_K = 1000  # Retrieve more candidates before re-ranking
 
     # Fusion weights
-    DENSE_WEIGHT = 1.0
-    LMIR_WEIGHT = 0.0
-    COOCCUR_WEIGHT = 0.0
-    GF_WEIGHT = 0.0
+    DENSE_WEIGHT = 0.3
+    LMIR_WEIGHT = 0.4
+    COOCCUR_WEIGHT = 0.15
+    GF_WEIGHT = 0.15
 
     MU = 2000
 
@@ -742,7 +742,9 @@ def process_queries(retriever, queries, corpus, top_k):
     query_texts = []
     pids = []
     for playlist in queries:
-        query_text = f"{playlist.get('name', '')} {playlist.get('description', '')}".strip()
+        query_text = (
+            f"{playlist.get('name', '')} {playlist.get('description', '')}".strip()
+        )
         query_texts.append(query_text)
         pids.append(playlist.get("pid"))
 
