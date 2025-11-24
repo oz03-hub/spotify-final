@@ -54,6 +54,7 @@ def load_playlist_path_index(index_file):
 def find_playlist_file(playlist_id, playlist_path_index):
     """Find the file path for a given playlist ID."""
     for bucket_key, file_path in playlist_path_index.items():
+        bucket_key = bucket_key[10:]
         min_pid, max_pid = map(int, bucket_key.split("_"))
         if min_pid <= playlist_id <= max_pid:
             return Path(file_path)

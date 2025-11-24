@@ -8,3 +8,5 @@ nltk
 scipy
 scikit-learn
 sentence-transformers
+
+xgboost
