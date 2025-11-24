@@ -33,6 +33,7 @@ pip install orjson
 pip install scikit-learn
 pip install implicit
 pip install xgboost
+pip install sentence-transformers
 
 echo ""
 echo "================================"
