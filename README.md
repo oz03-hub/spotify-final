@@ -3,15 +3,14 @@
 ## Set up
 Clone this repository.
 
-
-Download the dataset from: https://drive.google.com/file/d/1O9euNDgvpkyG0sa7oYya4E5fnPjsqYYS/view?usp=sharing, place the zip at the root of the repository. Unzip the small dataset, this is the smaller version with 10,000 playlists. It should be unzipped into dataset directory. To confirm verify `dataset/train/`, `dataset/test/`, `dataset/tracks_index.json` exists after unzipping.
+Download the dataset from: [https://drive.google.com/file/d/1O9euNDgvpkyG0sa7oYya4E5fnPjsqYYS/view?usp=sharing](https://drive.google.com/file/d/1NOiqWRXLmNz58Wefq8bdzQlNKTrStLzN/view?usp=sharing), place the zip at the root of the repository. Unzip the small dataset, this is the smaller version with 10,000 playlists. It should be unzipped into dataset directory. To confirm verify `dataset/train/`, `dataset/test/`, `dataset/tracks_index.json` exists after unzipping. Under `dataset`, the `playlist_metadata.json` file must be located too, if unzipping erased or corrupted it, please download again and place it there.
 
 You need a fresh python environment. 
-1. Run `./scripts/setup_env.sh`. (If it does not work, please resolve the error with your packager, the libraries listed there must be installed).
+1. Run `./scripts/setup_env.sh`. (If it does not work, please resolve the error with your packager, the libraries listed there must be installed). If any further script throws missing library error, please activate the environment and install it. You can activate the environment with `conda activate retrieval_env`.
 2. With the environment activated run `python build_inverted_index.py` to verify it is working.
 
 # Running the baselines
-**For all baselines**, we recommend a CPU with multiple cores, and around 32GB of memory. Unity research cluster is more than capable of running all experiments, personal laptops might be slightly slower and warm. For fine-tuning the dense retriever, you should use a GPU, we provide slurm scripts to tune on Unity.
+**For all baselines**, we recommend a CPU with multiple cores, and around 32GB of memory. Unity research cluster is more than capable of running all experiments, personal laptops might be slightly slower and toasty. For fine-tuning the dense retriever, you should use a GPU, we provide slurm scripts to tune on Unity.
 
 **For Unity users**, the SLURM files are located in `scripts`, you can invoke each by `sbatch file run_*.sh`
 
