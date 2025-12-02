@@ -59,6 +59,12 @@ Please activate your environment as you did in baselines.
 python fast_rerank_dataset.py
 ```
 
+or 
+
+```
+sbatch make_rerank_data.sh
+```
+
 This will create training data and re-ranked test/validation data.
 
 ### Training LTR Model
@@ -67,7 +73,15 @@ python ltr.py
 ```
 
 ## Hybrid Retrieval
+### Fine-tuning DPR
+You can use the slurm script, but must change the checkpoint location:
+```
+scbatch scripts/fine_tune.sh
+```
+Or you can run the python command itself.
+
 ### Training and inference
+Make sure the model directory is pointed towards the checkpoint location you used for DPR fine-tuning.
 ```
 python hybrid_ret.py --retrain --model_dir /path/to/a/hpc/space/
 ```
