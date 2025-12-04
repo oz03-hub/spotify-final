@@ -43,6 +43,7 @@ def condense_json_files(input_folder, output_file):
     
     # Save condensed data
     print(f"\nSaving condensed data to {output_file}")
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, 'w') as f:
         json.dump(condensed_data, f, indent=2)
 
