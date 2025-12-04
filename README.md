@@ -103,8 +103,9 @@ python wmf_playlists.py
 Saves 3 seperate results, see output for file locations:
 1. Top $$k_P$$ playlists found based on inputted playlist title
 2. Top $$k_f$$ final songs with averaged song embeddings
-3. Top $$k_f$$ final songs with a weighted average over song embeddings 
+3. Top $$k_f$$ final songs with a weighted average over song embeddings
 
+To view results for weighted/unweighted embeddings, please use 'wmf_playlists/wmf_unweighted' or 'wmf_playlists/wmf_weighted' as the baseline argument in the next section
 
 ## Viewing Evaluation Measures
 
@@ -112,7 +113,7 @@ Saves 3 seperate results, see output for file locations:
 python view_measures.py --baseline lmir_baseline
 ```
 
-To change the baseline viewed, just change the argument for the approach or baseline you ran.
+To change the baseline viewed, just change the argument for the approach or baseline you ran. To check which baselines you can view the results for, please check the results folder in the dataset directory
 
 ## Inference
 
