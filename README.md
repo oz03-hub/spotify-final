@@ -89,13 +89,13 @@ python hybrid_ret.py --retrain --model_dir /path/to/a/hpc/space/
 ## Transfer Based Initialization
 The transfer based initialization adds an extra step to the original zero-shot approach. We get the top $$k_p$$ pre-existing playlists closest to the provided title, using the songs in those playlists alongside the original title to generate the top $$k_f$$ final songs
 
-### Create Narrow_JSON
+### Create Narrow JSON
 ```
 python narrow_json.py
 ```
 Saves a smaller file that contains only the information needed for the transfer based initialization
 
-### WFM Playlists
+### WMF Playlists
 ```
 python wmf_playlists.py
 ```
